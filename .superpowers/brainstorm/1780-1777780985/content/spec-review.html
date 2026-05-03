@@ -1,0 +1,76 @@
+<h2>Spec Written ✓</h2>
+<p class="subtitle">docs/superpowers/specs/2026-05-03-perbaikan-transaksi-design.md</p>
+
+<div class="section">
+  <h3>Task Breakdown</h3>
+  <div style="display:flex;flex-direction:column;gap:8px;margin-top:8px;">
+    <div style="background:#1e1e2e;border:1px solid #313244;border-radius:8px;padding:12px 16px;display:flex;align-items:center;gap:12px;">
+      <div style="background:#cba6f7;color:#1e1e2e;border-radius:4px;padding:2px 8px;font-size:11px;font-weight:700;min-width:24px;text-align:center;">1</div>
+      <div style="flex:1;font-size:13px;">Version data model &amp; storage layer</div>
+      <div style="font-size:11px;opacity:.5;">Backend · no deps</div>
+    </div>
+    <div style="display:flex;gap:8px;">
+      <div style="background:#1e1e2e;border:1px solid #a6e3a1;border-radius:8px;padding:12px 16px;display:flex;align-items:center;gap:10px;flex:1;">
+        <div style="background:#a6e3a1;color:#1e1e2e;border-radius:4px;padding:2px 8px;font-size:11px;font-weight:700;min-width:24px;text-align:center;">2</div>
+        <div>
+          <div style="font-size:12px;">Version History Viewer UI</div>
+          <div style="font-size:11px;opacity:.5;">Frontend · needs 1</div>
+        </div>
+      </div>
+      <div style="background:#1e1e2e;border:1px solid #a6e3a1;border-radius:8px;padding:12px 16px;display:flex;align-items:center;gap:10px;flex:1;">
+        <div style="background:#a6e3a1;color:#1e1e2e;border-radius:4px;padding:2px 8px;font-size:11px;font-weight:700;min-width:24px;text-align:center;">3</div>
+        <div>
+          <div style="font-size:12px;">PTI — form &amp; instant save</div>
+          <div style="font-size:11px;opacity:.5;">Frontend + Backend · needs 1</div>
+        </div>
+      </div>
+    </div>
+    <div style="background:#1e1e2e;border:1px solid #cba6f7;border-radius:8px;padding:12px 16px;display:flex;align-items:center;gap:12px;">
+      <div style="background:#cba6f7;color:#1e1e2e;border-radius:4px;padding:2px 8px;font-size:11px;font-weight:700;min-width:24px;text-align:center;">4</div>
+      <div style="flex:1;font-size:13px;">PT — user request form &amp; submit</div>
+      <div style="font-size:11px;opacity:.5;">Frontend + Backend · needs 1</div>
+    </div>
+    <div style="display:flex;gap:8px;">
+      <div style="background:#1e1e2e;border:1px solid #f38ba8;border-radius:8px;padding:12px 16px;display:flex;align-items:center;gap:10px;flex:1;">
+        <div style="background:#f38ba8;color:#1e1e2e;border-radius:4px;padding:2px 8px;font-size:11px;font-weight:700;min-width:24px;text-align:center;">5</div>
+        <div>
+          <div style="font-size:12px;">PT — admin queue &amp; diff view</div>
+          <div style="font-size:11px;opacity:.5;">Frontend + Backend · needs 4</div>
+        </div>
+      </div>
+      <div style="background:#1e1e2e;border:1px solid #f38ba8;border-radius:8px;padding:12px 16px;display:flex;align-items:center;gap:10px;flex:1;">
+        <div style="background:#f38ba8;color:#1e1e2e;border-radius:4px;padding:2px 8px;font-size:11px;font-weight:700;min-width:24px;text-align:center;">6</div>
+        <div>
+          <div style="font-size:12px;">PT — approve / reject / delete</div>
+          <div style="font-size:11px;opacity:.5;">Backend · needs 4</div>
+        </div>
+      </div>
+    </div>
+    <div style="background:#1e1e2e;border:1px solid #f38ba8;border-radius:8px;padding:12px 16px;display:flex;align-items:center;gap:12px;">
+      <div style="background:#f38ba8;color:#1e1e2e;border-radius:4px;padding:2px 8px;font-size:11px;font-weight:700;min-width:24px;text-align:center;">7</div>
+      <div style="flex:1;font-size:13px;">PT — rejection reason display &amp; resubmit flow</div>
+      <div style="font-size:11px;opacity:.5;">Frontend · needs 5, 6</div>
+    </div>
+  </div>
+</div>
+
+<div class="section" style="margin-top:20px;">
+  <h3>PTI Allowed Fields</h3>
+  <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;">
+    <span style="background:#1e1e2e;border:1px solid #a6e3a1;color:#a6e3a1;border-radius:6px;padding:4px 12px;font-size:12px;">Keterangan</span>
+    <span style="background:#1e1e2e;border:1px solid #a6e3a1;color:#a6e3a1;border-radius:6px;padding:4px 12px;font-size:12px;">Tanggal Kirim</span>
+    <span style="background:#1e1e2e;border:1px solid #a6e3a1;color:#a6e3a1;border-radius:6px;padding:4px 12px;font-size:12px;">Jam Kirim Pesanan</span>
+    <span style="background:#1e1e2e;border:1px solid #a6e3a1;color:#a6e3a1;border-radius:6px;padding:4px 12px;font-size:12px;">Status: Dikirim / Diambil</span>
+    <span style="background:#1e1e2e;border:1px solid #a6e3a1;color:#a6e3a1;border-radius:6px;padding:4px 12px;font-size:12px;">Kontak WhatsApp</span>
+  </div>
+  <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap;">
+    <span style="background:#1e1e2e;border:1px solid #45475a;color:#6c7086;border-radius:6px;padding:4px 12px;font-size:12px;text-decoration:line-through;">Items / Qty</span>
+    <span style="background:#1e1e2e;border:1px solid #45475a;color:#6c7086;border-radius:6px;padding:4px 12px;font-size:12px;text-decoration:line-through;">Payment Method</span>
+    <span style="background:#1e1e2e;border:1px solid #45475a;color:#6c7086;border-radius:6px;padding:4px 12px;font-size:12px;text-decoration:line-through;">Pricing / Discounts</span>
+    <span style="background:#1e1e2e;border:1px solid #45475a;color:#6c7086;border-radius:6px;padding:4px 12px;font-size:12px;text-decoration:line-through;">Additional Costs</span>
+  </div>
+</div>
+
+<div style="margin-top:24px;padding:16px;background:#1e1e2e;border:1px solid #f9e2af;border-radius:8px;font-size:13px;color:#f9e2af;">
+  📋 Please review the spec in your terminal and confirm before we proceed to the implementation plan.
+</div>
