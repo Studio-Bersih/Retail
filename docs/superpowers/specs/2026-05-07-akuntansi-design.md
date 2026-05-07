@@ -96,6 +96,20 @@ export const KAS_PAYMENT_METHODS = [
 export type KasPaymentMethod = typeof KAS_PAYMENT_METHODS[number]
 ```
 
+### `CreateKasPayload`
+Input shape accepted by `createKas()`. `createdBy` and `outletId` are injected from `$auth` inside the hook — callers do not supply them.
+
+```typescript
+interface CreateKasPayload {
+    type: "masuk" | "keluar"
+    tanggal: string
+    entries: Array<Omit<KasEntry, "id">>   // ids assigned inside createKas
+    pic: { employeeId: string; name: string }
+}
+```
+
+`KasEntry.id` values are assigned by `createKas` using `crypto.randomUUID()` (or a `Date.now()` fallback) — callers never supply entry IDs.
+
 ---
 
 ## 3. Routes
@@ -123,9 +137,12 @@ Saldo[i] = Saldo[i-1] + (type === "masuk" ? +totalAmount : -totalAmount)
 | Tanggal | Ref ID | PIC | Kas Masuk (+) | Kas Keluar (−) | Saldo |
 |---|---|---|---|---|---|
 
-Each row is expandable (or has action buttons) for:
-- View version history → opens `KasVersionTimeline`
-- PT action → "Perbaikan" button if no pending request, "⏳ Menunggu" badge if pending, "Revisi" if rejected
+Each row has inline action buttons (no expand needed):
+- **"Lihat Versi"** → opens `KasVersionTimeline` in a modal
+- PT button — one of three states:
+  - "Perbaikan" button → if no pending request
+  - "⏳ Menunggu" badge → if `pendingRequest.status === "pending"` (non-clickable)
+  - "Revisi" button → if `pendingRequest.status === "rejected"`
 
 **Filter bar** (above table):
 - Date range — defaults from `useDefault` (first day to current day of month)
