@@ -87,6 +87,12 @@ The core of the app. All business logic lives here.
 }
 ```
 
+## Component Discipline
+
+- **Limit Svelte component files per feature** — aim for 3 or fewer component files per feature folder. More files make individual files smaller, but the feature as a whole becomes harder to navigate and maintain.
+- **Extract to a component only when** the UI is a modal/form complex enough to deserve isolation, or is genuinely reused across pages. Tables, lists, admin panels, and diff views should live inline in the page file unless they are truly shared.
+- **Prefer larger, cohesive page files** over many small fragmented component files. A page file that handles its own table rendering and filtering is easier to reason about than a page that delegates to six single-purpose components.
+
 ## Coding Conventions
 
 From `docs/coding-styles.md`:
