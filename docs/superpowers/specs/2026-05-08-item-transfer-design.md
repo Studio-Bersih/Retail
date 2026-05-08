@@ -12,8 +12,8 @@ Item Transfer is a stock movement feature for transferring inventory between bra
 
 | Aspect | Detail |
 |---|---|
-| Stock effect | Increases at receiving outlet only on acceptance |
-| Sender stock | Never decreases — stock was never deducted on send; only the accepted qty is moved |
+| Stock effect | On acceptance: sender outlet decreases by `qtyReceived`; receiving outlet increases by `qtyReceived` |
+| Sender stock | Stays unchanged on creation. Decreases by `qtyReceived` at acceptance. Shortfall (`qtySent - qtyReceived`) stays at sender if `returnable=true`; is also deducted (written off) if `returnable=false` |
 | Scheduled transfers | Transfers with a future `tanggal` enter `scheduled` state; receiving branches cannot act until the date arrives |
 | Returnable flag | Per-transfer setting: if `true`, undelivered qty (sent minus received) is logged as a return to the sender; if `false`, the shortfall is written off |
 | PIC | Auto-set from `$auth.userId` — not user-editable |
@@ -174,7 +174,7 @@ Append-only log entry created whenever stock physically moves.
 interface StockMovement {
     id: string
     transferId: string
-    acceptanceId: string | null     // null for return-to-sender entries
+    acceptanceId: string            // always set — return entries are triggered by an acceptance
     productId: string
     fromOutletId: string
     toOutletId: string
@@ -349,11 +349,12 @@ getMovementsForTransfer(transferId: string): StockMovement[]
 ### Stock Effect Logic
 
 **`acceptTransfer()`:**
-1. For each item in `AcceptedItem`: add `qtyReceived` to `toOutlet` mock stock
-2. If `returnable && qtyReceived < qtySent`: add `qtySent - qtyReceived` back to `fromOutlet` mock stock; log a `"return"` `StockMovement`
-3. If `!returnable && qtyReceived < qtySent`: shortfall is written off — no stock change for sender
-4. Log a `"transfer"` `StockMovement` per item for the received quantities
-5. Check if all destinations for the parent `TransferRecord` have now responded; if so, set `TransferRecord` status to `"completed"`
+1. For each item in `AcceptedItem`: deduct `qtyReceived` from `fromOutlet` mock stock
+2. For each item in `AcceptedItem`: add `qtyReceived` to `toOutlet` mock stock
+3. If `!returnable && qtyReceived < qtySent`: also deduct `qtySent - qtyReceived` from `fromOutlet` mock stock (shortfall written off); log a `"return"` `StockMovement` with `toOutletId = fromOutletId` to record the write-off
+4. If `returnable && qtyReceived < qtySent`: shortfall stays at sender — no additional deduction needed
+5. Log a `"transfer"` `StockMovement` per item for the received quantities
+6. Check if all destinations for the parent `TransferRecord` have now responded; if so, set `TransferRecord` status to `"completed"`
 
 **`approveAcceptanceRepairRequest()`:**
 1. Compare original `qtyReceived` vs proposed `qtyReceived` per item; apply delta to receiving outlet stock
