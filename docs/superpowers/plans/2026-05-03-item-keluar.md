@@ -23,12 +23,9 @@
 - `src/library/stores/itemKeluar.ts` — UI state for active form/modal
 - `src/library/components/outlet/item-keluar/ItemKeluarForm.svelte` — creation form (new record)
 - `src/library/components/outlet/item-keluar/ItemKeluarRepairModal.svelte` — PT request form + rejection/revision flow
-- `src/library/components/outlet/item-keluar/ItemKeluarVersionTimeline.svelte` — version history timeline
-- `src/library/components/outlet/item-keluar/ItemKeluarVersionDiff.svelte` — two-version field comparison
-- `src/library/components/outlet/item-keluar/AdminItemKeluarQueue.svelte` — admin pending request list
-- `src/library/components/outlet/item-keluar/AdminItemKeluarDiffView.svelte` — admin diff + action buttons
+- `src/library/components/outlet/item-keluar/ItemKeluarDetail.svelte` — version selector buttons, inline diff table, and PT button
 - `src/routes/outlet/item-keluar/+page.svelte` — main page: history list + create button
-- `src/routes/outlet/item-keluar/repair/+page.svelte` — admin repair queue page
+- `src/routes/outlet/item-keluar/repair/+page.svelte` — admin repair queue page (queue list and diff view inlined, no sub-components)
 
 **Modified:**
 - `src/library/mock/items.ts` — add `stock` field per product if not present
@@ -670,28 +667,33 @@ git commit -m "feat: implement Item Keluar creation form with stock decrease and
 
 ---
 
-## Task 3: History Page & Version Viewer
+## Task 3: Version History Viewer
 
 **Files:**
-- Create: `src/library/components/outlet/item-keluar/ItemKeluarVersionTimeline.svelte`
-- Create: `src/library/components/outlet/item-keluar/ItemKeluarVersionDiff.svelte`
+- Create: `src/library/components/outlet/item-keluar/ItemKeluarDetail.svelte`
 - Modify: `src/routes/outlet/item-keluar/+page.svelte`
 
-- [ ] **Step 3.1: Create ItemKeluarVersionTimeline.svelte**
+- [ ] **Step 3.1: Create ItemKeluarDetail.svelte**
 
 ```svelte
-<!-- src/library/components/outlet/item-keluar/ItemKeluarVersionTimeline.svelte -->
+<!-- src/library/components/outlet/item-keluar/ItemKeluarDetail.svelte -->
 <script lang="ts">
-  import type { ItemKeluarVersion, ItemKeluarRepairRequest } from "$lib/types/ItemKeluar"
+  import type { ItemKeluar, ItemKeluarVersion, ItemKeluarSnapshot } from "$lib/types/ItemKeluar"
 
-  export let versions: ItemKeluarVersion[]
-  export let currentVersionIndex: number
-  export let pendingRequest: ItemKeluarRepairRequest | null = null
-  export let onSelectVersion: (v: ItemKeluarVersion) => void = () => {}
+  export let record: ItemKeluar
+  export let onClose: () => void
 
-  const typeColor: Record<ItemKeluarVersion["type"], string> = {
-    original: "badge-secondary",
-    approved: "badge-error"
+  let selectedIndex = record.currentVersionIndex
+  $: selectedVersion = record.versions.find(v => v.index === selectedIndex) ?? record.versions[record.currentVersionIndex - 1]
+  $: prevVersion = selectedVersion.index > 1 ? record.versions.find(v => v.index === selectedVersion.index - 1) ?? null : null
+
+  const FIELD_LABELS: Partial<Record<keyof ItemKeluarSnapshot, string>> = {
+    items: "Item / Qty / Harga",
+    totalLoss: "Total Kerugian",
+    kategori: "Kategori",
+    keterangan: "Keterangan",
+    tanggal: "Tanggal",
+    pics: "PIC & Tanggungan"
   }
 
   const typeLabel: Record<ItemKeluarVersion["type"], string> = {
@@ -699,19 +701,40 @@ git commit -m "feat: implement Item Keluar creation form with stock decrease and
     approved: "Disetujui"
   }
 
+  const typeColor: Record<ItemKeluarVersion["type"], string> = {
+    original: "badge-secondary",
+    approved: "badge-error"
+  }
+
   function formatDate(iso: string): string {
     return new Date(iso).toLocaleString("id-ID", { dateStyle: "short", timeStyle: "short" })
   }
+
+  function formatValue(val: unknown): string {
+    if (val === null || val === undefined) return "-"
+    if (typeof val === "number") return new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", maximumFractionDigits: 0 }).format(val)
+    if (typeof val === "object") return JSON.stringify(val, null, 2)
+    return String(val)
+  }
+
+  $: changedFields = prevVersion
+    ? (selectedVersion.changedFields.length > 0
+        ? selectedVersion.changedFields
+        : (Object.keys(selectedVersion.snapshot) as Array<keyof ItemKeluarSnapshot>).filter(
+            k => JSON.stringify(prevVersion!.snapshot[k]) !== JSON.stringify(selectedVersion.snapshot[k])
+          ))
+    : []
 </script>
 
-<div class="flex flex-col gap-2 p-2">
+<div class="flex flex-col gap-3">
   <h3 class="text-sm font-semibold opacity-70 uppercase tracking-wide">Riwayat Versi</h3>
+
   <div class="flex flex-col gap-1">
-    {#each versions as version}
+    {#each record.versions as version}
       <button
         class="flex items-center gap-3 p-3 rounded-lg border text-left transition-colors
-          {version.index === currentVersionIndex ? 'border-primary bg-base-200' : 'border-base-300 hover:bg-base-200'}"
-        on:click={() => onSelectVersion(version)}
+          {version.index === selectedIndex ? 'border-primary bg-base-200' : 'border-base-300 hover:bg-base-200'}"
+        on:click={() => selectedIndex = version.index}
       >
         <div class="font-bold text-lg w-8 text-center opacity-70">V{version.index}</div>
         <div class="flex-1 min-w-0">
@@ -725,147 +748,92 @@ git commit -m "feat: implement Item Keluar creation form with stock decrease and
         </div>
       </button>
     {/each}
-
-    {#if pendingRequest?.status === "pending"}
+    {#if record.pendingRequest?.status === "pending"}
       <div class="flex items-center gap-3 p-3 rounded-lg border border-warning bg-warning/10">
         <div class="font-bold text-lg w-8 text-center opacity-50">⏳</div>
         <div class="flex-1">
           <span class="badge badge-sm badge-warning">Menunggu Persetujuan</span>
-          <div class="text-xs opacity-50 mt-0.5">{formatDate(pendingRequest.submittedAt)} · {pendingRequest.submittedBy}</div>
+          <div class="text-xs opacity-50 mt-0.5">{formatDate(record.pendingRequest.submittedAt)} · {record.pendingRequest.submittedBy}</div>
         </div>
       </div>
     {/if}
   </div>
-</div>
-```
 
-- [ ] **Step 3.2: Create ItemKeluarVersionDiff.svelte**
-
-```svelte
-<!-- src/library/components/outlet/item-keluar/ItemKeluarVersionDiff.svelte -->
-<script lang="ts">
-  import type { ItemKeluarVersion, ItemKeluarSnapshot } from "$lib/types/ItemKeluar"
-
-  export let versionA: ItemKeluarVersion
-  export let versionB: ItemKeluarVersion
-
-  const FIELD_LABELS: Partial<Record<keyof ItemKeluarSnapshot, string>> = {
-    items: "Item / Qty / Harga",
-    totalLoss: "Total Kerugian",
-    kategori: "Kategori",
-    keterangan: "Keterangan",
-    tanggal: "Tanggal",
-    pics: "PIC & Tanggungan"
-  }
-
-  function formatValue(val: unknown): string {
-    if (val === null || val === undefined) return "-"
-    if (typeof val === "number") return new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", maximumFractionDigits: 0 }).format(val)
-    if (typeof val === "object") return JSON.stringify(val, null, 2)
-    return String(val)
-  }
-
-  $: changedFields = versionB.changedFields.length > 0
-    ? versionB.changedFields
-    : (Object.keys(versionB.snapshot) as Array<keyof ItemKeluarSnapshot>).filter(
-        k => JSON.stringify(versionA.snapshot[k]) !== JSON.stringify(versionB.snapshot[k])
-      )
-</script>
-
-<div class="flex flex-col gap-2">
-  <div class="grid grid-cols-2 gap-4 text-sm font-semibold text-center opacity-60 mb-1">
-    <div>V{versionA.index} — Sebelum</div>
-    <div>V{versionB.index} — Sesudah</div>
-  </div>
-
-  {#if changedFields.length === 0}
-    <p class="text-center opacity-40 text-sm py-6">Tidak ada perubahan</p>
-  {:else}
-    {#each changedFields as field}
-      {@const label = FIELD_LABELS[field as keyof ItemKeluarSnapshot] ?? field}
-      {@const oldVal = formatValue(versionA.snapshot[field as keyof ItemKeluarSnapshot])}
-      {@const newVal = formatValue(versionB.snapshot[field as keyof ItemKeluarSnapshot])}
-      <div class="rounded-lg border border-base-300 overflow-hidden">
-        <div class="px-3 py-1.5 bg-base-200 text-xs font-semibold uppercase tracking-wide">{label}</div>
-        <div class="grid grid-cols-2">
-          <div class="px-3 py-2 text-sm bg-error/10 text-error border-r border-base-300 whitespace-pre-wrap font-mono">{oldVal}</div>
-          <div class="px-3 py-2 text-sm bg-success/10 text-success whitespace-pre-wrap font-mono">{newVal}</div>
-        </div>
+  {#if prevVersion}
+    <div class="divider">Perubahan pada V{selectedVersion.index}</div>
+    {#if changedFields.length === 0}
+      <p class="text-center opacity-40 text-sm py-4">Tidak ada perubahan</p>
+    {:else}
+      <div class="grid grid-cols-2 gap-4 text-sm font-semibold text-center opacity-60 mb-1">
+        <div>V{prevVersion.index} — Sebelum</div>
+        <div>V{selectedVersion.index} — Sesudah</div>
       </div>
-    {/each}
+      {#each changedFields as field}
+        {@const label = FIELD_LABELS[field as keyof ItemKeluarSnapshot] ?? field}
+        {@const oldVal = formatValue(prevVersion.snapshot[field as keyof ItemKeluarSnapshot])}
+        {@const newVal = formatValue(selectedVersion.snapshot[field as keyof ItemKeluarSnapshot])}
+        <div class="rounded-lg border border-base-300 overflow-hidden">
+          <div class="px-3 py-1.5 bg-base-200 text-xs font-semibold uppercase tracking-wide">{label}</div>
+          <div class="grid grid-cols-2">
+            <div class="px-3 py-2 text-sm bg-error/10 text-error border-r border-base-300 whitespace-pre-wrap font-mono">{oldVal}</div>
+            <div class="px-3 py-2 text-sm bg-success/10 text-success whitespace-pre-wrap font-mono">{newVal}</div>
+          </div>
+        </div>
+      {/each}
+    {/if}
   {/if}
+
+  <div class="flex justify-end pt-2">
+    <button class="btn btn-ghost btn-sm" on:click={onClose}>Tutup</button>
+  </div>
 </div>
 ```
 
-- [ ] **Step 3.3: Add version viewer to the main page**
+- [ ] **Step 3.2: Add version viewer to the main page**
 
 In `src/routes/outlet/item-keluar/+page.svelte`, add to `<script>`:
 
 ```svelte
 <script lang="ts">
   // Add to existing imports:
-  import ItemKeluarVersionTimeline from "$lib/components/outlet/item-keluar/ItemKeluarVersionTimeline.svelte"
-  import ItemKeluarVersionDiff from "$lib/components/outlet/item-keluar/ItemKeluarVersionDiff.svelte"
-  import type { ItemKeluarVersion, ItemKeluar } from "$lib/types/ItemKeluar"
+  import ItemKeluarDetail from "$lib/components/outlet/item-keluar/ItemKeluarDetail.svelte"
+  import type { ItemKeluar } from "$lib/types/ItemKeluar"
 
-  let versionTarget: ItemKeluar | null = null
-  let selectedVersion: ItemKeluarVersion | null = null
-
-  function openVersionHistory(id: string) {
-    versionTarget = mockItemKeluar.find(ik => ik.id === id) ?? null
-    selectedVersion = null
-  }
+  let detailTarget: ItemKeluar | null = null
 </script>
 ```
 
-In each list row's button area:
+In each list row's button area (replace the empty comment):
 
 ```svelte
-<button class="btn btn-xs btn-ghost" on:click={() => openVersionHistory(ik.id)}>
-  Lihat Versi
-</button>
+<button class="btn btn-xs btn-ghost" on:click={() => detailTarget = ik}>Detail</button>
 ```
 
 Add the modal after the list:
 
 ```svelte
-{#if versionTarget}
+{#if detailTarget}
   <dialog class="modal modal-open">
     <div class="modal-box max-w-2xl">
-      <h3 class="font-bold text-lg mb-4">Riwayat Versi — {versionTarget.id}</h3>
-      <ItemKeluarVersionTimeline
-        versions={versionTarget.versions}
-        currentVersionIndex={versionTarget.currentVersionIndex}
-        pendingRequest={versionTarget.pendingRequest}
-        onSelectVersion={(v) => selectedVersion = v}
-      />
-      {#if selectedVersion && selectedVersion.index > 1}
-        <div class="divider">Perubahan pada V{selectedVersion.index}</div>
-        <ItemKeluarVersionDiff
-          versionA={versionTarget.versions[selectedVersion.index - 2]}
-          versionB={selectedVersion}
-        />
-      {/if}
-      <div class="modal-action">
-        <button class="btn" on:click={() => { versionTarget = null; selectedVersion = null }}>Tutup</button>
-      </div>
+      <h3 class="font-bold text-lg mb-4">Detail — {detailTarget.id}</h3>
+      <ItemKeluarDetail record={detailTarget} onClose={() => detailTarget = null} />
     </div>
-    <form method="dialog" class="modal-backdrop" on:submit={() => versionTarget = null}><button>close</button></form>
+    <form method="dialog" class="modal-backdrop" on:submit={() => detailTarget = null}><button>close</button></form>
   </dialog>
 {/if}
 ```
 
-- [ ] **Step 3.4: Verify in dev server**
+- [ ] **Step 3.3: Verify in dev server**
 
 ```bash
 npm run dev
 ```
-Click "Lihat Versi" on IK-001. Expected: timeline shows V1 (Original, purple) and V2 (Disetujui, red). Click V2 → diff shows `keterangan` changed.
+Click "Detail" on IK-001. Expected: modal opens showing V1 (Original, purple) and V2 (Disetujui, red) selector buttons. Click V2 → inline diff shows `keterangan` changed.
 
-- [ ] **Step 3.5: Commit**
+- [ ] **Step 3.4: Commit**
 
 ```bash
-git add src/library/components/outlet/item-keluar/ItemKeluarVersionTimeline.svelte src/library/components/outlet/item-keluar/ItemKeluarVersionDiff.svelte src/routes/outlet/item-keluar/+page.svelte
+git add src/library/components/outlet/item-keluar/ItemKeluarDetail.svelte src/routes/outlet/item-keluar/+page.svelte
 git commit -m "feat: add Item Keluar version history viewer"
 ```
 
@@ -1134,53 +1102,46 @@ export { createItemKeluar, computeTotalLoss, submitRepairRequest, reviseRepairRe
 </dialog>
 ```
 
-- [ ] **Step 4.3: Add PT button and lock badge to main page**
+- [ ] **Step 4.3: Add PT button to ItemKeluarDetail.svelte**
 
-In `src/routes/outlet/item-keluar/+page.svelte`, add to `<script>`:
+In `src/library/components/outlet/item-keluar/ItemKeluarDetail.svelte`, add to `<script>`:
 
 ```svelte
 <script lang="ts">
-  import ItemKeluarRepairModal from "$lib/components/outlet/item-keluar/ItemKeluarRepairModal.svelte"
+  // Add to existing imports:
+  import ItemKeluarRepairModal from "./ItemKeluarRepairModal.svelte"
 
-  let ptTarget: ItemKeluar | null = null
+  let showRepairModal = false
 
-  function openRepair(id: string) {
-    const ik = mockItemKeluar.find(r => r.id === id)
-    if (!ik) return
-    if (!ik.pendingRequest || ik.pendingRequest.status === "rejected") ptTarget = ik
-  }
-
-  function handlePtUpdated(updated: ItemKeluar) {
-    const idx = mockItemKeluar.findIndex(r => r.id === updated.id)
-    if (idx !== -1) mockItemKeluar[idx] = updated
-    ptTarget = null
+  function canOpenRepair(): boolean {
+    return !record.pendingRequest || record.pendingRequest.status === "rejected"
   }
 </script>
 ```
 
-In each row's button area (replace the empty comment):
+Replace the `<div class="flex justify-end pt-2">` footer at the bottom of the template with:
 
 ```svelte
-<button class="btn btn-xs btn-ghost" on:click={() => openVersionHistory(ik.id)}>
-  Lihat Versi
-</button>
-{#if ik.pendingRequest?.status === "pending"}
-  <span class="badge badge-warning badge-sm">⏳ Menunggu</span>
-{:else}
-  <button class="btn btn-xs btn-outline btn-primary" on:click={() => openRepair(ik.id)}>
-    {ik.pendingRequest?.status === "rejected" ? "Revisi" : "Perbaikan"}
-  </button>
-{/if}
-```
+<div class="flex items-center justify-between pt-2 border-t border-base-300 mt-1">
+  {#if record.pendingRequest?.status === "pending"}
+    <span class="badge badge-warning text-sm">⏳ Menunggu persetujuan admin</span>
+  {:else}
+    <button
+      class="btn btn-outline btn-primary btn-sm"
+      on:click={() => showRepairModal = true}
+      disabled={!canOpenRepair()}
+    >
+      {record.pendingRequest?.status === "rejected" ? "Revisi Perbaikan" : "Ajukan Perbaikan"}
+    </button>
+  {/if}
+  <button class="btn btn-ghost btn-sm" on:click={onClose}>Tutup</button>
+</div>
 
-Add modal:
-
-```svelte
-{#if ptTarget}
+{#if showRepairModal}
   <ItemKeluarRepairModal
-    record={ptTarget}
-    onClose={() => ptTarget = null}
-    onUpdated={handlePtUpdated}
+    record={record}
+    onClose={() => showRepairModal = false}
+    onUpdated={() => { showRepairModal = false; onClose() }}
   />
 {/if}
 ```
@@ -1190,13 +1151,13 @@ Add modal:
 ```bash
 npm run dev
 ```
-- IK-003 (rejected): "Revisi" button → modal shows rejection reason banner + "Kirim Ulang" button.
-- IK-001 (no pending): "Perbaikan" button → form pre-filled with current snapshot → Submit Request → row shows ⏳.
+- IK-003 (rejected): click "Detail" → "Revisi Perbaikan" button visible → click → modal shows rejection reason banner + "Kirim Ulang" button.
+- IK-001 (no pending): click "Detail" → "Ajukan Perbaikan" → form pre-filled with current snapshot → Submit Request → detail shows ⏳ pending state.
 
 - [ ] **Step 4.5: Commit**
 
 ```bash
-git add src/library/hooks/useItemKeluar.ts src/library/components/outlet/item-keluar/ItemKeluarRepairModal.svelte src/routes/outlet/item-keluar/+page.svelte
+git add src/library/hooks/useItemKeluar.ts src/library/components/outlet/item-keluar/ItemKeluarRepairModal.svelte src/library/components/outlet/item-keluar/ItemKeluarDetail.svelte
 git commit -m "feat: implement Item Keluar PT user request form and revision flow"
 ```
 
@@ -1205,21 +1166,50 @@ git commit -m "feat: implement Item Keluar PT user request form and revision flo
 ## Task 5: PT — Admin Queue & Diff View
 
 **Files:**
-- Create: `src/library/components/outlet/item-keluar/AdminItemKeluarQueue.svelte`
-- Create: `src/library/components/outlet/item-keluar/AdminItemKeluarDiffView.svelte`
 - Create: `src/routes/outlet/item-keluar/repair/+page.svelte`
 
-- [ ] **Step 5.1: Create AdminItemKeluarQueue.svelte**
+- [ ] **Step 5.1: Create admin repair page with queue and diff view inlined**
 
 ```svelte
-<!-- src/library/components/outlet/item-keluar/AdminItemKeluarQueue.svelte -->
+<!-- src/routes/outlet/item-keluar/repair/+page.svelte -->
 <script lang="ts">
-  import type { ItemKeluar } from "$lib/types/ItemKeluar"
+  import type { ItemKeluar, ItemKeluarVersion, ItemKeluarSnapshot } from "$lib/types/ItemKeluar"
   import { mockItemKeluar } from "$lib/mock/itemKeluar"
 
-  export let onSelect: (record: ItemKeluar) => void
+  let selected: ItemKeluar | null = null
+  let showRejectInput = false
+  let rejectionReason = ""
+  let confirmDeleteRecord = false
 
   $: queue = mockItemKeluar.filter(ik => ik.pendingRequest?.status === "pending" && !ik.isDeleted)
+
+  $: currentVersion = selected ? selected.versions[selected.currentVersionIndex - 1] : null
+  $: req = selected?.pendingRequest ?? null
+  $: proposedVersion = selected && req
+    ? {
+        index: selected.currentVersionIndex + 1,
+        type: "approved" as const,
+        snapshot: req.proposedSnapshot,
+        changedFields: [] as string[],
+        createdBy: req.submittedBy,
+        createdAt: req.submittedAt,
+        requestId: req.id
+      }
+    : null
+  $: changedFields = currentVersion && req
+    ? (Object.keys(req.proposedSnapshot) as Array<keyof ItemKeluarSnapshot>).filter(
+        k => JSON.stringify(currentVersion!.snapshot[k]) !== JSON.stringify(req!.proposedSnapshot[k])
+      )
+    : []
+
+  const FIELD_LABELS: Partial<Record<keyof ItemKeluarSnapshot, string>> = {
+    items: "Item / Qty / Harga",
+    totalLoss: "Total Kerugian",
+    kategori: "Kategori",
+    keterangan: "Keterangan",
+    tanggal: "Tanggal",
+    pics: "PIC & Tanggungan"
+  }
 
   function formatDate(iso: string): string {
     return new Date(iso).toLocaleString("id-ID", { dateStyle: "short", timeStyle: "short" })
@@ -1228,152 +1218,129 @@ git commit -m "feat: implement Item Keluar PT user request form and revision flo
   function formatRupiah(n: number): string {
     return new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", maximumFractionDigits: 0 }).format(n)
   }
-</script>
 
-<div class="flex flex-col gap-3">
-  <h2 class="text-xl font-bold">Antrian Perbaikan — Item Keluar</h2>
-
-  {#if queue.length === 0}
-    <div class="py-16 text-center opacity-40 text-sm">Tidak ada permintaan yang menunggu persetujuan</div>
-  {:else}
-    <div class="flex flex-col gap-2">
-      {#each queue as ik}
-        {@const req = ik.pendingRequest!}
-        <button
-          class="flex items-center gap-4 p-4 rounded-xl border border-base-300 hover:bg-base-200 text-left transition-colors w-full"
-          on:click={() => onSelect(ik)}
-        >
-          <div class="flex-1 min-w-0">
-            <div class="font-semibold">{ik.id}</div>
-            <div class="text-sm opacity-60 mt-0.5">
-              Diajukan: {req.submittedBy} · {formatDate(req.submittedAt)}
-            </div>
-            <div class="text-sm opacity-60">
-              Kerugian diusulkan: {formatRupiah(req.proposedSnapshot.totalLoss)}
-            </div>
-            {#if req.revisions > 0}
-              <div class="text-xs text-warning mt-0.5">Revisi ke-{req.revisions}</div>
-            {/if}
-          </div>
-          <span class="badge badge-warning shrink-0">Menunggu</span>
-        </button>
-      {/each}
-    </div>
-  {/if}
-</div>
-```
-
-- [ ] **Step 5.2: Create AdminItemKeluarDiffView.svelte**
-
-```svelte
-<!-- src/library/components/outlet/item-keluar/AdminItemKeluarDiffView.svelte -->
-<script lang="ts">
-  import type { ItemKeluar, ItemKeluarVersion } from "$lib/types/ItemKeluar"
-  import ItemKeluarVersionDiff from "./ItemKeluarVersionDiff.svelte"
-
-  export let record: ItemKeluar
-  export let loading = false
-  export let onAction: (
-    action: "approve" | "reject" | "delete-request" | "delete-record",
-    reason?: string
-  ) => void
-
-  const currentVersion = record.versions[record.currentVersionIndex - 1]
-  const req = record.pendingRequest!
-
-  const proposedVersion: ItemKeluarVersion = {
-    index: record.currentVersionIndex + 1,
-    type: "approved",
-    snapshot: req.proposedSnapshot,
-    changedFields: [],
-    createdBy: req.submittedBy,
-    createdAt: req.submittedAt,
-    requestId: req.id
+  function formatValue(val: unknown): string {
+    if (val === null || val === undefined) return "-"
+    if (typeof val === "number") return formatRupiah(val)
+    if (typeof val === "object") return JSON.stringify(val, null, 2)
+    return String(val)
   }
 
-  let showRejectInput = false
-  let rejectionReason = ""
-  let confirmDeleteRecord = false
-
-  function submitReject() {
-    if (!rejectionReason.trim()) return
-    onAction("reject", rejectionReason.trim())
+  function back() {
+    selected = null
+    showRejectInput = false
+    rejectionReason = ""
+    confirmDeleteRecord = false
   }
-</script>
-
-<div class="flex flex-col gap-4">
-  <div class="flex items-start justify-between gap-4 flex-wrap">
-    <div>
-      <h3 class="font-bold text-lg">{record.id}</h3>
-      <p class="text-sm opacity-60">
-        Diajukan: {req.submittedBy} ·
-        V{record.currentVersionIndex} → V{record.currentVersionIndex + 1}
-        {#if req.revisions > 0}· Revisi ke-{req.revisions}{/if}
-      </p>
-    </div>
-    <div class="flex flex-wrap gap-2">
-      <button class="btn btn-success btn-sm" disabled={loading} on:click={() => onAction("approve")}>✓ Setujui</button>
-      <button class="btn btn-warning btn-sm" disabled={loading} on:click={() => showRejectInput = !showRejectInput}>✗ Tolak</button>
-      <button class="btn btn-ghost btn-sm" disabled={loading} on:click={() => onAction("delete-request")}>Hapus Permintaan</button>
-      {#if confirmDeleteRecord}
-        <button class="btn btn-error btn-sm" disabled={loading} on:click={() => onAction("delete-record")}>Yakin Hapus Record?</button>
-        <button class="btn btn-ghost btn-sm" on:click={() => confirmDeleteRecord = false}>Batal</button>
-      {:else}
-        <button class="btn btn-ghost btn-sm text-error" disabled={loading} on:click={() => confirmDeleteRecord = true}>Hapus Record</button>
-      {/if}
-    </div>
-  </div>
-
-  {#if showRejectInput}
-    <div class="flex gap-2 items-end">
-      <label class="form-control flex-1">
-        <div class="label"><span class="label-text">Alasan penolakan</span></div>
-        <input class="input input-bordered" bind:value={rejectionReason} placeholder="Jelaskan alasan penolakan..." />
-      </label>
-      <button class="btn btn-error" disabled={!rejectionReason.trim() || loading} on:click={submitReject}>
-        Kirim Penolakan
-      </button>
-    </div>
-  {/if}
-
-  <div class="divider">Perbandingan Perubahan</div>
-  <ItemKeluarVersionDiff versionA={currentVersion} versionB={proposedVersion} />
-</div>
-```
-
-- [ ] **Step 5.3: Create admin repair page (queue only, no actions yet)**
-
-```svelte
-<!-- src/routes/outlet/item-keluar/repair/+page.svelte -->
-<script lang="ts">
-  import AdminItemKeluarQueue from "$lib/components/outlet/item-keluar/AdminItemKeluarQueue.svelte"
-  import AdminItemKeluarDiffView from "$lib/components/outlet/item-keluar/AdminItemKeluarDiffView.svelte"
-  import type { ItemKeluar } from "$lib/types/ItemKeluar"
-
-  let selected: ItemKeluar | null = null
 </script>
 
 <div class="p-6 max-w-5xl mx-auto">
-  {#if selected}
-    <button class="btn btn-ghost btn-sm mb-4" on:click={() => selected = null}>← Kembali</button>
-    <AdminItemKeluarDiffView record={selected} onAction={() => {}} />
+  {#if selected && currentVersion && req && proposedVersion}
+    <button class="btn btn-ghost btn-sm mb-4" on:click={back}>← Kembali</button>
+
+    <div class="flex items-start justify-between gap-4 flex-wrap mb-4">
+      <div>
+        <h3 class="font-bold text-lg">{selected.id}</h3>
+        <p class="text-sm opacity-60">
+          Diajukan: {req.submittedBy} ·
+          V{selected.currentVersionIndex} → V{selected.currentVersionIndex + 1}
+          {#if req.revisions > 0}· Revisi ke-{req.revisions}{/if}
+        </p>
+      </div>
+      <div class="flex flex-wrap gap-2">
+        <button class="btn btn-success btn-sm" on:click={() => {}}>✓ Setujui</button>
+        <button class="btn btn-warning btn-sm" on:click={() => showRejectInput = !showRejectInput}>✗ Tolak</button>
+        <button class="btn btn-ghost btn-sm" on:click={() => {}}>Hapus Permintaan</button>
+        {#if confirmDeleteRecord}
+          <button class="btn btn-error btn-sm" on:click={() => {}}>Yakin Hapus Record?</button>
+          <button class="btn btn-ghost btn-sm" on:click={() => confirmDeleteRecord = false}>Batal</button>
+        {:else}
+          <button class="btn btn-ghost btn-sm text-error" on:click={() => confirmDeleteRecord = true}>Hapus Record</button>
+        {/if}
+      </div>
+    </div>
+
+    {#if showRejectInput}
+      <div class="flex gap-2 items-end mb-4">
+        <label class="form-control flex-1">
+          <div class="label"><span class="label-text">Alasan penolakan</span></div>
+          <input class="input input-bordered" bind:value={rejectionReason} placeholder="Jelaskan alasan penolakan..." />
+        </label>
+        <button class="btn btn-error" disabled={!rejectionReason.trim()} on:click={() => {}}>
+          Kirim Penolakan
+        </button>
+      </div>
+    {/if}
+
+    <div class="divider">Perbandingan Perubahan</div>
+
+    <div class="grid grid-cols-2 gap-4 text-sm font-semibold text-center opacity-60 mb-2">
+      <div>V{currentVersion.index} — Sebelum</div>
+      <div>V{proposedVersion.index} — Sesudah</div>
+    </div>
+
+    {#if changedFields.length === 0}
+      <p class="text-center opacity-40 text-sm py-6">Tidak ada perubahan</p>
+    {:else}
+      {#each changedFields as field}
+        {@const label = FIELD_LABELS[field as keyof ItemKeluarSnapshot] ?? field}
+        {@const oldVal = formatValue(currentVersion.snapshot[field as keyof ItemKeluarSnapshot])}
+        {@const newVal = formatValue(proposedVersion.snapshot[field as keyof ItemKeluarSnapshot])}
+        <div class="rounded-lg border border-base-300 overflow-hidden mb-2">
+          <div class="px-3 py-1.5 bg-base-200 text-xs font-semibold uppercase tracking-wide">{label}</div>
+          <div class="grid grid-cols-2">
+            <div class="px-3 py-2 text-sm bg-error/10 text-error border-r border-base-300 whitespace-pre-wrap font-mono">{oldVal}</div>
+            <div class="px-3 py-2 text-sm bg-success/10 text-success whitespace-pre-wrap font-mono">{newVal}</div>
+          </div>
+        </div>
+      {/each}
+    {/if}
+
   {:else}
-    <AdminItemKeluarQueue onSelect={(r) => selected = r} />
+    <h2 class="text-xl font-bold mb-4">Antrian Perbaikan — Item Keluar</h2>
+
+    {#if queue.length === 0}
+      <div class="py-16 text-center opacity-40 text-sm">Tidak ada permintaan yang menunggu persetujuan</div>
+    {:else}
+      <div class="flex flex-col gap-2">
+        {#each queue as ik}
+          {@const r = ik.pendingRequest!}
+          <button
+            class="flex items-center gap-4 p-4 rounded-xl border border-base-300 hover:bg-base-200 text-left transition-colors w-full"
+            on:click={() => selected = ik}
+          >
+            <div class="flex-1 min-w-0">
+              <div class="font-semibold">{ik.id}</div>
+              <div class="text-sm opacity-60 mt-0.5">
+                Diajukan: {r.submittedBy} · {formatDate(r.submittedAt)}
+              </div>
+              <div class="text-sm opacity-60">
+                Kerugian diusulkan: {formatRupiah(r.proposedSnapshot.totalLoss)}
+              </div>
+              {#if r.revisions > 0}
+                <div class="text-xs text-warning mt-0.5">Revisi ke-{r.revisions}</div>
+              {/if}
+            </div>
+            <span class="badge badge-warning shrink-0">Menunggu</span>
+          </button>
+        {/each}
+      </div>
+    {/if}
   {/if}
 </div>
 ```
 
-- [ ] **Step 5.4: Verify in dev server**
+- [ ] **Step 5.2: Verify in dev server**
 
 ```bash
 npm run dev
 ```
-Navigate to `/outlet/item-keluar/repair`. IK-002 appears in queue. Click it → diff view shows qty 3 → 2, keterangan change, totalLoss 225000 → 150000. Action buttons visible but not wired yet.
+Navigate to `/outlet/item-keluar/repair`. IK-002 appears in the queue list. Click it → switches to diff view showing V1 → V2 columns: qty 3 → 2, keterangan change, totalLoss 225000 → 150000. Action buttons visible but not wired yet.
 
-- [ ] **Step 5.5: Commit**
+- [ ] **Step 5.3: Commit**
 
 ```bash
-git add src/library/components/outlet/item-keluar/AdminItemKeluarQueue.svelte src/library/components/outlet/item-keluar/AdminItemKeluarDiffView.svelte src/routes/outlet/item-keluar/repair/+page.svelte
+git add src/routes/outlet/item-keluar/repair/+page.svelte
 git commit -m "feat: add Item Keluar admin repair queue and diff view"
 ```
 
@@ -1482,42 +1449,103 @@ Replace `src/routes/outlet/item-keluar/repair/+page.svelte` with:
 
 ```svelte
 <script lang="ts">
-  import AdminItemKeluarQueue from "$lib/components/outlet/item-keluar/AdminItemKeluarQueue.svelte"
-  import AdminItemKeluarDiffView from "$lib/components/outlet/item-keluar/AdminItemKeluarDiffView.svelte"
-  import type { ItemKeluar } from "$lib/types/ItemKeluar"
+  import type { ItemKeluar, ItemKeluarVersion, ItemKeluarSnapshot } from "$lib/types/ItemKeluar"
+  import { mockItemKeluar } from "$lib/mock/itemKeluar"
   import { approveRepairRequest, rejectRepairRequest, deleteRepairRequest, deleteRecord } from "$lib/hooks/useItemKeluar"
 
   let selected: ItemKeluar | null = null
+  let showRejectInput = false
+  let rejectionReason = ""
+  let confirmDeleteRecord = false
   let actionLoading = false
   let actionError = ""
 
-  async function handleAction(
-    action: "approve" | "reject" | "delete-request" | "delete-record",
-    reason?: string
-  ) {
+  $: queue = mockItemKeluar.filter(ik => ik.pendingRequest?.status === "pending" && !ik.isDeleted)
+
+  $: currentVersion = selected ? selected.versions[selected.currentVersionIndex - 1] : null
+  $: req = selected?.pendingRequest ?? null
+  $: proposedVersion = selected && req
+    ? {
+        index: selected.currentVersionIndex + 1,
+        type: "approved" as const,
+        snapshot: req.proposedSnapshot,
+        changedFields: [] as string[],
+        createdBy: req.submittedBy,
+        createdAt: req.submittedAt,
+        requestId: req.id
+      }
+    : null
+  $: changedFields = currentVersion && req
+    ? (Object.keys(req.proposedSnapshot) as Array<keyof ItemKeluarSnapshot>).filter(
+        k => JSON.stringify(currentVersion!.snapshot[k]) !== JSON.stringify(req!.proposedSnapshot[k])
+      )
+    : []
+
+  const FIELD_LABELS: Partial<Record<keyof ItemKeluarSnapshot, string>> = {
+    items: "Item / Qty / Harga",
+    totalLoss: "Total Kerugian",
+    kategori: "Kategori",
+    keterangan: "Keterangan",
+    tanggal: "Tanggal",
+    pics: "PIC & Tanggungan"
+  }
+
+  function formatDate(iso: string): string {
+    return new Date(iso).toLocaleString("id-ID", { dateStyle: "short", timeStyle: "short" })
+  }
+
+  function formatRupiah(n: number): string {
+    return new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", maximumFractionDigits: 0 }).format(n)
+  }
+
+  function formatValue(val: unknown): string {
+    if (val === null || val === undefined) return "-"
+    if (typeof val === "number") return formatRupiah(val)
+    if (typeof val === "object") return JSON.stringify(val, null, 2)
+    return String(val)
+  }
+
+  function back() {
+    selected = null
+    showRejectInput = false
+    rejectionReason = ""
+    confirmDeleteRecord = false
+    actionError = ""
+  }
+
+  async function handleApprove() {
     if (!selected) return
     actionLoading = true
-    actionError = ""
+    const result = await approveRepairRequest(selected.id)
+    if (result.success) back()
+    else actionError = result.error ?? "Gagal menyetujui"
+    actionLoading = false
+  }
 
-    let result: { success: boolean; error?: string }
+  async function handleReject() {
+    if (!selected || !rejectionReason.trim()) return
+    actionLoading = true
+    const result = await rejectRepairRequest(selected.id, rejectionReason.trim())
+    if (result.success) back()
+    else actionError = result.error ?? "Gagal menolak"
+    actionLoading = false
+  }
 
-    if (action === "approve") {
-      result = await approveRepairRequest(selected.id)
-    } else if (action === "reject" && reason) {
-      result = await rejectRepairRequest(selected.id, reason)
-    } else if (action === "delete-request" && selected.pendingRequest) {
-      result = await deleteRepairRequest(selected.pendingRequest.id)
-    } else if (action === "delete-record") {
-      result = await deleteRecord(selected.id)
-    } else {
-      result = { success: false, error: "Aksi tidak dikenal" }
-    }
+  async function handleDeleteRequest() {
+    if (!selected?.pendingRequest) return
+    actionLoading = true
+    const result = await deleteRepairRequest(selected.pendingRequest.id)
+    if (result.success) back()
+    else actionError = result.error ?? "Gagal menghapus permintaan"
+    actionLoading = false
+  }
 
-    if (result.success) {
-      selected = null
-    } else {
-      actionError = result.error ?? "Terjadi kesalahan"
-    }
+  async function handleDeleteRecord() {
+    if (!selected) return
+    actionLoading = true
+    const result = await deleteRecord(selected.id)
+    if (result.success) back()
+    else actionError = result.error ?? "Gagal menghapus record"
     actionLoading = false
   }
 </script>
@@ -1526,11 +1554,98 @@ Replace `src/routes/outlet/item-keluar/repair/+page.svelte` with:
   {#if actionError}
     <div class="alert alert-error text-sm mb-4">{actionError}</div>
   {/if}
-  {#if selected}
-    <button class="btn btn-ghost btn-sm mb-4" on:click={() => { selected = null; actionError = "" }}>← Kembali</button>
-    <AdminItemKeluarDiffView record={selected} loading={actionLoading} onAction={handleAction} />
+
+  {#if selected && currentVersion && req && proposedVersion}
+    <button class="btn btn-ghost btn-sm mb-4" on:click={back}>← Kembali</button>
+
+    <div class="flex items-start justify-between gap-4 flex-wrap mb-4">
+      <div>
+        <h3 class="font-bold text-lg">{selected.id}</h3>
+        <p class="text-sm opacity-60">
+          Diajukan: {req.submittedBy} ·
+          V{selected.currentVersionIndex} → V{selected.currentVersionIndex + 1}
+          {#if req.revisions > 0}· Revisi ke-{req.revisions}{/if}
+        </p>
+      </div>
+      <div class="flex flex-wrap gap-2">
+        <button class="btn btn-success btn-sm" disabled={actionLoading} on:click={handleApprove}>✓ Setujui</button>
+        <button class="btn btn-warning btn-sm" disabled={actionLoading} on:click={() => showRejectInput = !showRejectInput}>✗ Tolak</button>
+        <button class="btn btn-ghost btn-sm" disabled={actionLoading} on:click={handleDeleteRequest}>Hapus Permintaan</button>
+        {#if confirmDeleteRecord}
+          <button class="btn btn-error btn-sm" disabled={actionLoading} on:click={handleDeleteRecord}>Yakin Hapus Record?</button>
+          <button class="btn btn-ghost btn-sm" on:click={() => confirmDeleteRecord = false}>Batal</button>
+        {:else}
+          <button class="btn btn-ghost btn-sm text-error" disabled={actionLoading} on:click={() => confirmDeleteRecord = true}>Hapus Record</button>
+        {/if}
+      </div>
+    </div>
+
+    {#if showRejectInput}
+      <div class="flex gap-2 items-end mb-4">
+        <label class="form-control flex-1">
+          <div class="label"><span class="label-text">Alasan penolakan</span></div>
+          <input class="input input-bordered" bind:value={rejectionReason} placeholder="Jelaskan alasan penolakan..." />
+        </label>
+        <button class="btn btn-error" disabled={!rejectionReason.trim() || actionLoading} on:click={handleReject}>
+          Kirim Penolakan
+        </button>
+      </div>
+    {/if}
+
+    <div class="divider">Perbandingan Perubahan</div>
+
+    <div class="grid grid-cols-2 gap-4 text-sm font-semibold text-center opacity-60 mb-2">
+      <div>V{currentVersion.index} — Sebelum</div>
+      <div>V{proposedVersion.index} — Sesudah</div>
+    </div>
+
+    {#if changedFields.length === 0}
+      <p class="text-center opacity-40 text-sm py-6">Tidak ada perubahan</p>
+    {:else}
+      {#each changedFields as field}
+        {@const label = FIELD_LABELS[field as keyof ItemKeluarSnapshot] ?? field}
+        {@const oldVal = formatValue(currentVersion.snapshot[field as keyof ItemKeluarSnapshot])}
+        {@const newVal = formatValue(proposedVersion.snapshot[field as keyof ItemKeluarSnapshot])}
+        <div class="rounded-lg border border-base-300 overflow-hidden mb-2">
+          <div class="px-3 py-1.5 bg-base-200 text-xs font-semibold uppercase tracking-wide">{label}</div>
+          <div class="grid grid-cols-2">
+            <div class="px-3 py-2 text-sm bg-error/10 text-error border-r border-base-300 whitespace-pre-wrap font-mono">{oldVal}</div>
+            <div class="px-3 py-2 text-sm bg-success/10 text-success whitespace-pre-wrap font-mono">{newVal}</div>
+          </div>
+        </div>
+      {/each}
+    {/if}
+
   {:else}
-    <AdminItemKeluarQueue onSelect={(r) => { selected = r; actionError = "" }} />
+    <h2 class="text-xl font-bold mb-4">Antrian Perbaikan — Item Keluar</h2>
+
+    {#if queue.length === 0}
+      <div class="py-16 text-center opacity-40 text-sm">Tidak ada permintaan yang menunggu persetujuan</div>
+    {:else}
+      <div class="flex flex-col gap-2">
+        {#each queue as ik}
+          {@const r = ik.pendingRequest!}
+          <button
+            class="flex items-center gap-4 p-4 rounded-xl border border-base-300 hover:bg-base-200 text-left transition-colors w-full"
+            on:click={() => { selected = ik; actionError = "" }}
+          >
+            <div class="flex-1 min-w-0">
+              <div class="font-semibold">{ik.id}</div>
+              <div class="text-sm opacity-60 mt-0.5">
+                Diajukan: {r.submittedBy} · {formatDate(r.submittedAt)}
+              </div>
+              <div class="text-sm opacity-60">
+                Kerugian diusulkan: {formatRupiah(r.proposedSnapshot.totalLoss)}
+              </div>
+              {#if r.revisions > 0}
+                <div class="text-xs text-warning mt-0.5">Revisi ke-{r.revisions}</div>
+              {/if}
+            </div>
+            <span class="badge badge-warning shrink-0">Menunggu</span>
+          </button>
+        {/each}
+      </div>
+    {/if}
   {/if}
 </div>
 ```
