@@ -114,6 +114,78 @@ From `docs/coding-styles.md`:
 - All icons are SVGs in `/static/icons/`
 - Modals use backdrop-blur for high-stakes actions (Payment, Promo)
 
+## Dashboard Conventions
+
+Every page that renders a list or table **must** include all three of the following, implemented inline in the page file (no sub-component):
+
+1. **Search bar** — a single `<input type="text">` that filters across all meaningful fields of every row. Changing the search value resets `currentPage` to `1`.
+
+2. **Per-page dropdown** — a `<select>` with exactly four options: `10`, `25`, `50`, `100`. Changing the value resets `currentPage` to `1`.
+
+3. **Pagination** — client-side, derived from the filtered result set. Renders at most **5 page buttons** as a sliding window centered on `currentPage`. Prev / Next buttons flank the window.
+
+The canonical Svelte reactive block (copy verbatim, adjust field names):
+
+```svelte
+<script lang="ts">
+  let search = ""
+  let perPage: 10 | 25 | 50 | 100 = 25
+  let currentPage = 1
+
+  $: filtered = items.filter(item =>
+    Object.values(item).some(v => String(v).toLowerCase().includes(search.toLowerCase()))
+  )
+  $: totalPages = Math.max(1, Math.ceil(filtered.length / perPage))
+  $: paginated = filtered.slice((currentPage - 1) * perPage, currentPage * perPage)
+  $: if (search !== undefined || perPage) currentPage = 1
+
+  $: pageButtons = (() => {
+    let start = Math.max(1, currentPage - 2)
+    let end = Math.min(totalPages, start + 4)
+    if (end - start < 4) start = Math.max(1, end - 4)
+    return Array.from({ length: end - start + 1 }, (_, i) => start + i)
+  })()
+</script>
+```
+
+The canonical toolbar markup (search left, per-page right):
+
+```svelte
+<div class="flex items-center justify-between gap-4 mb-4">
+  <input
+    type="text"
+    class="input input-bordered input-sm w-72"
+    placeholder="Cari..."
+    bind:value={search}
+  />
+  <select class="select select-bordered select-sm" bind:value={perPage}>
+    <option value={10}>10 / halaman</option>
+    <option value={25}>25 / halaman</option>
+    <option value={50}>50 / halaman</option>
+    <option value={100}>100 / halaman</option>
+  </select>
+</div>
+```
+
+The canonical pagination markup (placed below the table):
+
+```svelte
+{#if totalPages > 1}
+  <div class="flex justify-center items-center gap-1 mt-4">
+    <button class="btn btn-sm btn-ghost" disabled={currentPage === 1} on:click={() => currentPage--}>‹</button>
+    {#each pageButtons as p}
+      <button
+        class="btn btn-sm {p === currentPage ? 'btn-primary' : 'btn-ghost'}"
+        on:click={() => currentPage = p}
+      >{p}</button>
+    {/each}
+    <button class="btn btn-sm btn-ghost" disabled={currentPage === totalPages} on:click={() => currentPage++}>›</button>
+  </div>
+{/if}
+```
+
+See `docs/coding-styles.md` § Dashboard Pagination Pattern for the full reference.
+
 ## Authentication
 
 - `$auth` store holds session; persisted in encrypted LocalStorage
