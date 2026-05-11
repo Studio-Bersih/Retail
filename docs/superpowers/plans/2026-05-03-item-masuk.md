@@ -10,6 +10,27 @@
 
 ---
 
+## File Map
+
+**Created:**
+- `src/library/types/ItemMasuk.ts` — all TypeScript interfaces
+- `src/library/mock/suppliers.ts` — hardcoded supplier list
+- `src/library/mock/outletConfig.ts` — per-outlet config mock
+- `src/library/mock/itemMasuk.ts` — seed records
+- `src/library/hooks/useItemMasuk.ts` — all business logic functions
+- `src/library/stores/itemMasuk.ts` — reactive store + `refreshItemMasuks()`
+- `src/library/components/outlet/item-masuk/ItemMasukForm.svelte` — creation modal form
+- `src/library/components/outlet/item-masuk/ItemMasukDetail.svelte` — version timeline selector + inline diff table + PT button/status
+- `src/library/components/outlet/item-masuk/ItemMasukRepairModal.svelte` — user PT request form modal
+- `src/routes/outlet/item-masuk/+page.svelte` — main list + detail page
+- `src/routes/outlet/item-masuk/repair/+page.svelte` — admin PT queue + diff + actions (all inline, no separate components)
+
+**Test files:**
+- `src/library/mock/outletConfig.test.ts`
+- `src/library/hooks/useItemMasuk.test.ts`
+
+---
+
 ### Task 1: Types, constants & mock data
 
 **Files:**
@@ -485,7 +506,7 @@ export function refreshItemMasuks(): void {
     import { getOutletConfig } from "$library/mock/outletConfig"
     import { auth } from "$library/stores/auth"
     import ItemMasukForm from "$library/components/outlet/item-masuk/ItemMasukForm.svelte"
-    import ItemMasukVersionTimeline from "$library/components/outlet/item-masuk/ItemMasukVersionTimeline.svelte"
+    import ItemMasukDetail from "$library/components/outlet/item-masuk/ItemMasukDetail.svelte"
 
     $: config = getOutletConfig($auth.outletId)
     $: active = $itemMasuks.filter((r) => !r.isDeleted)
@@ -532,7 +553,7 @@ export function refreshItemMasuks(): void {
     <!-- Detail / Timeline -->
     <div class="flex-1">
         {#if selected}
-            <ItemMasukVersionTimeline record={selected} on:refresh={refreshItemMasuks} />
+            <ItemMasukDetail record={selected} on:refresh={refreshItemMasuks} />
         {:else}
             <div class="flex items-center justify-center h-full opacity-40">Pilih record untuk melihat detail</div>
         {/if}
@@ -558,125 +579,56 @@ git commit -m "feat(item-masuk): creation form, submission, and stock increase"
 
 ---
 
-### Task 3: History page & version viewer
+### Task 3: Detail panel — version timeline + inline diff
 
 **Files:**
-- Create: `src/library/components/outlet/item-masuk/ItemMasukVersionTimeline.svelte`
-- Create: `src/library/components/outlet/item-masuk/ItemMasukVersionDiff.svelte`
+- Create: `src/library/components/outlet/item-masuk/ItemMasukDetail.svelte`
+
+The diff table is inlined directly — no separate `ItemMasukVersionDiff` component. Per CLAUDE.md: diff views belong in the enclosing file unless shared across pages.
 
 ---
 
-- [ ] **Step 1: Create the version diff component**
+- [ ] **Step 1: Create `ItemMasukDetail.svelte`**
 
 ```svelte
-<!-- src/library/components/outlet/item-masuk/ItemMasukVersionDiff.svelte -->
-<script lang="ts">
-    import type { ItemMasukVersion } from "$library/types/ItemMasuk"
-    import { getOutletConfig } from "$library/mock/outletConfig"
-    import { auth } from "$library/stores/auth"
-
-    export let prev: ItemMasukVersion | null
-    export let current: ItemMasukVersion
-
-    $: config = getOutletConfig($auth.outletId)
-
-    function changed(field: string): boolean {
-        return current.changedFields.includes(field)
-    }
-
-    function rowClass(field: string): string {
-        return changed(field) ? "bg-warning/10 font-semibold" : ""
-    }
-</script>
-
-<div class="flex flex-col gap-3 text-sm">
-    <div class="flex items-center gap-2">
-        <span class="badge" class:badge-secondary={current.type === "original"} class:badge-error={current.type === "approved"}>
-            V{current.index} {current.type}
-        </span>
-        <span class="opacity-50 text-xs">{current.createdAt.slice(0, 10)} · {current.createdBy}</span>
-    </div>
-
-    {#if prev}
-        <div class="overflow-x-auto">
-            <table class="table table-xs">
-                <thead>
-                    <tr><th>Field</th><th>Before</th><th>After</th></tr>
-                </thead>
-                <tbody>
-                    <tr class={rowClass("supplierId")}>
-                        <td>Supplier</td>
-                        <td>{prev.snapshot.supplierId}</td>
-                        <td>{current.snapshot.supplierId}</td>
-                    </tr>
-                    <tr class={rowClass("tanggal")}>
-                        <td>Tanggal</td>
-                        <td>{prev.snapshot.tanggal}</td>
-                        <td>{current.snapshot.tanggal}</td>
-                    </tr>
-                    <tr class={rowClass("keterangan")}>
-                        <td>Keterangan</td>
-                        <td>{prev.snapshot.keterangan}</td>
-                        <td>{current.snapshot.keterangan}</td>
-                    </tr>
-                    <tr class={rowClass("items")}>
-                        <td>Items</td>
-                        <td class="whitespace-pre-wrap">{JSON.stringify(prev.snapshot.items, null, 2)}</td>
-                        <td class="whitespace-pre-wrap">{JSON.stringify(current.snapshot.items, null, 2)}</td>
-                    </tr>
-                    {#if config.showHargaBeli}
-                        <tr class={rowClass("totalCost")}>
-                            <td>Total Cost</td>
-                            <td>Rp {prev.snapshot.totalCost.toLocaleString("id-ID")}</td>
-                            <td>Rp {current.snapshot.totalCost.toLocaleString("id-ID")}</td>
-                        </tr>
-                    {/if}
-                </tbody>
-            </table>
-        </div>
-    {:else}
-        <div class="opacity-50 text-xs">Original version — no previous to compare</div>
-        <div class="flex flex-col gap-1 mt-2">
-            <div><span class="opacity-60">Supplier:</span> {current.snapshot.supplierId}</div>
-            <div><span class="opacity-60">Tanggal:</span> {current.snapshot.tanggal}</div>
-            <div><span class="opacity-60">Keterangan:</span> {current.snapshot.keterangan}</div>
-            {#if config.showHargaBeli}
-                <div><span class="opacity-60">Total Cost:</span> Rp {current.snapshot.totalCost.toLocaleString("id-ID")}</div>
-            {/if}
-            <div class="mt-2 opacity-60">Items:</div>
-            {#each current.snapshot.items as item}
-                <div class="ml-2 text-xs">
-                    {item.productId} · qty {item.qty}
-                    {#if config.showHargaBeli} · Rp {item.hargaBeli.toLocaleString("id-ID")}{/if}
-                </div>
-            {/each}
-        </div>
-    {/if}
-</div>
-```
-
-- [ ] **Step 2: Create the version timeline component**
-
-```svelte
-<!-- src/library/components/outlet/item-masuk/ItemMasukVersionTimeline.svelte -->
+<!-- src/library/components/outlet/item-masuk/ItemMasukDetail.svelte -->
 <script lang="ts">
     import { createEventDispatcher } from "svelte"
-    import type { ItemMasuk } from "$library/types/ItemMasuk"
-    import ItemMasukVersionDiff from "./ItemMasukVersionDiff.svelte"
+    import type { ItemMasuk, ItemMasukVersion } from "$library/types/ItemMasuk"
+    import { getOutletConfig } from "$library/mock/outletConfig"
+    import { mockSuppliers } from "$library/mock/suppliers"
+    import { auth } from "$library/stores/auth"
     import ItemMasukRepairModal from "./ItemMasukRepairModal.svelte"
 
     export let record: ItemMasuk
 
     const dispatch = createEventDispatcher<{ refresh: void }>()
 
+    $: config = getOutletConfig($auth.outletId)
+
     let selectedIndex = record.currentVersionIndex
     $: selectedVersion = record.versions.find((v) => v.index === selectedIndex) ?? record.versions[record.currentVersionIndex - 1]
-    $: prevVersion = selectedVersion.index > 1 ? record.versions.find((v) => v.index === selectedVersion.index - 1) ?? null : null
+    $: prevVersion = selectedVersion.index > 1
+        ? record.versions.find((v) => v.index === selectedVersion.index - 1) ?? null
+        : null
 
     let showRepairModal = false
+
+    function changed(field: string): boolean {
+        return selectedVersion.changedFields.includes(field)
+    }
+
+    function rowClass(field: string): string {
+        return changed(field) ? "bg-warning/10 font-semibold" : ""
+    }
+
+    function supplierName(id: string): string {
+        return mockSuppliers.find((s) => s.id === id)?.name ?? id
+    }
 </script>
 
 <div class="flex flex-col gap-4">
+    <!-- Header: PT button / status -->
     <div class="flex justify-between items-center">
         <h3 class="font-bold">Riwayat Versi</h3>
         {#if !record.pendingRequest}
@@ -688,7 +640,7 @@ git commit -m "feat(item-masuk): creation form, submission, and stock increase"
         {/if}
     </div>
 
-    <!-- Timeline -->
+    <!-- Version selector -->
     <div class="flex gap-2 flex-wrap">
         {#each record.versions as version}
             <button
@@ -703,8 +655,71 @@ git commit -m "feat(item-masuk): creation form, submission, and stock increase"
         {/each}
     </div>
 
-    <!-- Diff view -->
-    <ItemMasukVersionDiff prev={prevVersion} current={selectedVersion} />
+    <!-- Version meta -->
+    <div class="flex items-center gap-2 text-sm">
+        <span class="badge" class:badge-secondary={selectedVersion.type === "original"} class:badge-error={selectedVersion.type === "approved"}>
+            V{selectedVersion.index} {selectedVersion.type}
+        </span>
+        <span class="opacity-50 text-xs">{selectedVersion.createdAt.slice(0, 10)} · {selectedVersion.createdBy}</span>
+    </div>
+
+    <!-- Inline diff table -->
+    {#if prevVersion}
+        <div class="overflow-x-auto text-sm">
+            <table class="table table-xs">
+                <thead>
+                    <tr><th>Field</th><th>Before</th><th>After</th></tr>
+                </thead>
+                <tbody>
+                    <tr class={rowClass("supplierId")}>
+                        <td>Supplier</td>
+                        <td>{supplierName(prevVersion.snapshot.supplierId)}</td>
+                        <td>{supplierName(selectedVersion.snapshot.supplierId)}</td>
+                    </tr>
+                    <tr class={rowClass("tanggal")}>
+                        <td>Tanggal</td>
+                        <td>{prevVersion.snapshot.tanggal}</td>
+                        <td>{selectedVersion.snapshot.tanggal}</td>
+                    </tr>
+                    <tr class={rowClass("keterangan")}>
+                        <td>Keterangan</td>
+                        <td>{prevVersion.snapshot.keterangan}</td>
+                        <td>{selectedVersion.snapshot.keterangan}</td>
+                    </tr>
+                    <tr class={rowClass("items")}>
+                        <td>Items</td>
+                        <td class="whitespace-pre-wrap font-mono text-xs">{JSON.stringify(prevVersion.snapshot.items, null, 2)}</td>
+                        <td class="whitespace-pre-wrap font-mono text-xs">{JSON.stringify(selectedVersion.snapshot.items, null, 2)}</td>
+                    </tr>
+                    {#if config.showHargaBeli}
+                        <tr class={rowClass("totalCost")}>
+                            <td>Total Cost</td>
+                            <td>Rp {prevVersion.snapshot.totalCost.toLocaleString("id-ID")}</td>
+                            <td>Rp {selectedVersion.snapshot.totalCost.toLocaleString("id-ID")}</td>
+                        </tr>
+                    {/if}
+                </tbody>
+            </table>
+        </div>
+    {:else}
+        <!-- Original version — no previous to compare against -->
+        <div class="flex flex-col gap-1 text-sm">
+            <div class="opacity-50 text-xs mb-1">Versi asli — tidak ada perbandingan</div>
+            <div><span class="opacity-60">Supplier:</span> {supplierName(selectedVersion.snapshot.supplierId)}</div>
+            <div><span class="opacity-60">Tanggal:</span> {selectedVersion.snapshot.tanggal}</div>
+            <div><span class="opacity-60">Keterangan:</span> {selectedVersion.snapshot.keterangan}</div>
+            {#if config.showHargaBeli}
+                <div><span class="opacity-60">Total Cost:</span> Rp {selectedVersion.snapshot.totalCost.toLocaleString("id-ID")}</div>
+            {/if}
+            <div class="mt-2 opacity-60">Items:</div>
+            {#each selectedVersion.snapshot.items as item}
+                <div class="ml-2 text-xs">
+                    {item.productId} · qty {item.qty}
+                    {#if config.showHargaBeli} · Rp {item.hargaBeli.toLocaleString("id-ID")}{/if}
+                </div>
+            {/each}
+        </div>
+    {/if}
 </div>
 
 {#if showRepairModal}
@@ -720,17 +735,17 @@ git commit -m "feat(item-masuk): creation form, submission, and stock increase"
 {/if}
 ```
 
-- [ ] **Step 3: Start dev server and verify history page renders**
+- [ ] **Step 2: Start dev server and verify detail panel renders**
 
 Run: `npm run dev`
 Navigate to `/outlet/item-masuk`
-Expected: List of records on the left, click one → version timeline + diff appears on the right
+Expected: List on the left; clicking a record shows version selector + diff table on the right
 
-- [ ] **Step 4: Commit**
+- [ ] **Step 3: Commit**
 
 ```bash
-git add src/library/components/outlet/item-masuk/ItemMasukVersionTimeline.svelte src/library/components/outlet/item-masuk/ItemMasukVersionDiff.svelte
-git commit -m "feat(item-masuk): version timeline and field-level diff viewer"
+git add src/library/components/outlet/item-masuk/ItemMasukDetail.svelte
+git commit -m "feat(item-masuk): version timeline and inline diff in ItemMasukDetail"
 ```
 
 ---
@@ -969,147 +984,83 @@ git commit -m "feat(item-masuk): PT user request form and submit/revise/delete"
 
 ---
 
-### Task 5: PT — admin queue & diff view
+### Task 5: PT — admin queue & diff view (inline in repair page)
 
 **Files:**
-- Create: `src/library/components/outlet/item-masuk/AdminItemMasukQueue.svelte`
-- Create: `src/library/components/outlet/item-masuk/AdminItemMasukDiffView.svelte`
 - Create: `src/routes/outlet/item-masuk/repair/+page.svelte`
+
+The admin queue list and diff table are inlined directly in the route page — no separate component files. Per CLAUDE.md: admin panels, lists, and diff views belong in the page file unless genuinely shared.
 
 ---
 
-- [ ] **Step 1: Create the admin diff view component**
+- [ ] **Step 1: Create the admin repair queue route with inline queue and diff**
 
 ```svelte
-<!-- src/library/components/outlet/item-masuk/AdminItemMasukDiffView.svelte -->
+<!-- src/routes/outlet/item-masuk/repair/+page.svelte -->
 <script lang="ts">
-    import type { ItemMasuk } from "$library/types/ItemMasuk"
+    import { itemMasuks, refreshItemMasuks } from "$library/stores/itemMasuk"
     import { getOutletConfig } from "$library/mock/outletConfig"
     import { mockSuppliers } from "$library/mock/suppliers"
-    import { auth } from "$library/stores/auth"
     import { approveRepairRequest, rejectRepairRequest, deleteRepairRequest, deleteRecord } from "$library/hooks/useItemMasuk"
-    import { createEventDispatcher } from "svelte"
-
-    export let record: ItemMasuk
-
-    const dispatch = createEventDispatcher<{ action: void }>()
+    import { auth } from "$library/stores/auth"
+    import type { ItemMasuk } from "$library/types/ItemMasuk"
 
     $: config = getOutletConfig($auth.outletId)
-    $: current = record.versions[record.currentVersionIndex - 1].snapshot
-    $: proposed = record.pendingRequest!.proposedSnapshot
+    $: pending = $itemMasuks.filter((r) => !r.isDeleted && r.pendingRequest?.status === "pending")
+
+    let selectedId: string | null = null
+    $: selected = pending.find((r) => r.id === selectedId) ?? null
+    $: current = selected ? selected.versions[selected.currentVersionIndex - 1].snapshot : null
+    $: proposed = selected?.pendingRequest?.proposedSnapshot ?? null
 
     let rejectReason = ""
     let showRejectInput = false
 
-    function supplierName(id: string) {
+    function supplierName(id: string): string {
         return mockSuppliers.find((s) => s.id === id)?.name ?? id
+    }
+
+    function selectRecord(id: string) {
+        selectedId = id
+        rejectReason = ""
+        showRejectInput = false
     }
 
     function handleApprove() {
-        approveRepairRequest(record.id)
-        dispatch("action")
+        if (!selected) return
+        approveRepairRequest(selected.id)
+        selectedId = null
+        refreshItemMasuks()
     }
 
     function handleReject() {
-        if (!rejectReason.trim()) return
-        rejectRepairRequest(record.id, rejectReason.trim())
-        dispatch("action")
+        if (!selected || !rejectReason.trim()) return
+        rejectRepairRequest(selected.id, rejectReason.trim())
+        selectedId = null
+        refreshItemMasuks()
     }
 
     function handleDeleteRequest() {
-        deleteRepairRequest(record.id)
-        dispatch("action")
+        if (!selected) return
+        deleteRepairRequest(selected.id)
+        selectedId = null
+        refreshItemMasuks()
     }
 
     function handleDeleteRecord() {
-        deleteRecord(record.id)
-        dispatch("action")
-    }
-</script>
-
-<div class="flex flex-col gap-4 text-sm">
-    <div class="overflow-x-auto">
-        <table class="table table-sm">
-            <thead>
-                <tr><th>Field</th><th>Original</th><th>Proposed</th></tr>
-            </thead>
-            <tbody>
-                <tr class={current.supplierId !== proposed.supplierId ? "bg-warning/10 font-semibold" : ""}>
-                    <td>Supplier</td>
-                    <td>{supplierName(current.supplierId)}</td>
-                    <td>{supplierName(proposed.supplierId)}</td>
-                </tr>
-                <tr class={current.tanggal !== proposed.tanggal ? "bg-warning/10 font-semibold" : ""}>
-                    <td>Tanggal</td>
-                    <td>{current.tanggal}</td>
-                    <td>{proposed.tanggal}</td>
-                </tr>
-                <tr class={current.keterangan !== proposed.keterangan ? "bg-warning/10 font-semibold" : ""}>
-                    <td>Keterangan</td>
-                    <td>{current.keterangan}</td>
-                    <td>{proposed.keterangan}</td>
-                </tr>
-                <tr class={JSON.stringify(current.items) !== JSON.stringify(proposed.items) ? "bg-warning/10 font-semibold" : ""}>
-                    <td>Items</td>
-                    <td class="whitespace-pre-wrap font-mono text-xs">{JSON.stringify(current.items, null, 2)}</td>
-                    <td class="whitespace-pre-wrap font-mono text-xs">{JSON.stringify(proposed.items, null, 2)}</td>
-                </tr>
-                {#if config.showHargaBeli}
-                    <tr class={current.totalCost !== proposed.totalCost ? "bg-warning/10 font-semibold" : ""}>
-                        <td>Total Cost</td>
-                        <td>Rp {current.totalCost.toLocaleString("id-ID")}</td>
-                        <td>Rp {proposed.totalCost.toLocaleString("id-ID")}</td>
-                    </tr>
-                {/if}
-            </tbody>
-        </table>
-    </div>
-
-    <div class="flex flex-col gap-2">
-        <button class="btn btn-success btn-sm" on:click={handleApprove}>✓ Approve</button>
-
-        {#if showRejectInput}
-            <div class="flex gap-2">
-                <input class="input input-bordered flex-1 input-sm" placeholder="Alasan penolakan..." bind:value={rejectReason} />
-                <button class="btn btn-error btn-sm" on:click={handleReject} disabled={!rejectReason.trim()}>Kirim</button>
-                <button class="btn btn-ghost btn-sm" on:click={() => (showRejectInput = false)}>Batal</button>
-            </div>
-        {:else}
-            <button class="btn btn-error btn-outline btn-sm" on:click={() => (showRejectInput = true)}>✗ Reject</button>
-        {/if}
-
-        <button class="btn btn-ghost btn-sm" on:click={handleDeleteRequest}>Hapus Request</button>
-        <button class="btn btn-ghost btn-sm text-error" on:click={handleDeleteRecord}>Hapus Record</button>
-    </div>
-</div>
-```
-
-- [ ] **Step 2: Create the admin queue component**
-
-```svelte
-<!-- src/library/components/outlet/item-masuk/AdminItemMasukQueue.svelte -->
-<script lang="ts">
-    import type { ItemMasuk } from "$library/types/ItemMasuk"
-    import { mockSuppliers } from "$library/mock/suppliers"
-    import AdminItemMasukDiffView from "./AdminItemMasukDiffView.svelte"
-
-    export let records: ItemMasuk[]
-
-    $: pending = records.filter((r) => !r.isDeleted && r.pendingRequest?.status === "pending")
-
-    let selectedId: string | null = null
-    $: selected = pending.find((r) => r.id === selectedId) ?? null
-
-    function supplierName(id: string) {
-        return mockSuppliers.find((s) => s.id === id)?.name ?? id
-    }
-
-    function handleAction() {
+        if (!selected) return
+        deleteRecord(selected.id)
         selectedId = null
+        refreshItemMasuks()
+    }
+
+    function diffClass(a: unknown, b: unknown): string {
+        return JSON.stringify(a) !== JSON.stringify(b) ? "bg-warning/10 font-semibold" : ""
     }
 </script>
 
-<div class="flex gap-4 h-full">
+<div class="flex gap-4 p-4 h-full">
+    <!-- Left: pending request list -->
     <div class="flex flex-col gap-2 w-72 shrink-0">
         <h3 class="font-bold mb-2">Antrian PT Item Masuk</h3>
         {#if pending.length === 0}
@@ -1121,7 +1072,7 @@ git commit -m "feat(item-masuk): PT user request form and submit/revise/delete"
                 class="card bg-base-200 p-3 text-left hover:bg-base-300 transition"
                 class:ring-2={selectedId === record.id}
                 class:ring-primary={selectedId === record.id}
-                on:click={() => (selectedId = record.id)}
+                on:click={() => selectRecord(record.id)}
             >
                 <div class="font-semibold text-sm">{supplierName(snap.supplierId)}</div>
                 <div class="text-xs opacity-60">{snap.tanggal}</div>
@@ -1130,9 +1081,66 @@ git commit -m "feat(item-masuk): PT user request form and submit/revise/delete"
         {/each}
     </div>
 
+    <!-- Right: inline diff + action buttons -->
     <div class="flex-1">
-        {#if selected}
-            <AdminItemMasukDiffView record={selected} on:action={handleAction} />
+        {#if selected && current && proposed}
+            <div class="flex flex-col gap-4 text-sm">
+                <h3 class="font-bold">Tinjauan Perbaikan</h3>
+
+                <div class="overflow-x-auto">
+                    <table class="table table-sm">
+                        <thead>
+                            <tr><th>Field</th><th>Original</th><th>Proposed</th></tr>
+                        </thead>
+                        <tbody>
+                            <tr class={diffClass(current.supplierId, proposed.supplierId)}>
+                                <td>Supplier</td>
+                                <td>{supplierName(current.supplierId)}</td>
+                                <td>{supplierName(proposed.supplierId)}</td>
+                            </tr>
+                            <tr class={diffClass(current.tanggal, proposed.tanggal)}>
+                                <td>Tanggal</td>
+                                <td>{current.tanggal}</td>
+                                <td>{proposed.tanggal}</td>
+                            </tr>
+                            <tr class={diffClass(current.keterangan, proposed.keterangan)}>
+                                <td>Keterangan</td>
+                                <td>{current.keterangan}</td>
+                                <td>{proposed.keterangan}</td>
+                            </tr>
+                            <tr class={diffClass(current.items, proposed.items)}>
+                                <td>Items</td>
+                                <td class="whitespace-pre-wrap font-mono text-xs">{JSON.stringify(current.items, null, 2)}</td>
+                                <td class="whitespace-pre-wrap font-mono text-xs">{JSON.stringify(proposed.items, null, 2)}</td>
+                            </tr>
+                            {#if config.showHargaBeli}
+                                <tr class={diffClass(current.totalCost, proposed.totalCost)}>
+                                    <td>Total Cost</td>
+                                    <td>Rp {current.totalCost.toLocaleString("id-ID")}</td>
+                                    <td>Rp {proposed.totalCost.toLocaleString("id-ID")}</td>
+                                </tr>
+                            {/if}
+                        </tbody>
+                    </table>
+                </div>
+
+                <div class="flex flex-col gap-2">
+                    <button class="btn btn-success btn-sm" on:click={handleApprove}>✓ Approve</button>
+
+                    {#if showRejectInput}
+                        <div class="flex gap-2">
+                            <input class="input input-bordered flex-1 input-sm" placeholder="Alasan penolakan..." bind:value={rejectReason} />
+                            <button class="btn btn-error btn-sm" on:click={handleReject} disabled={!rejectReason.trim()}>Kirim</button>
+                            <button class="btn btn-ghost btn-sm" on:click={() => (showRejectInput = false)}>Batal</button>
+                        </div>
+                    {:else}
+                        <button class="btn btn-error btn-outline btn-sm" on:click={() => (showRejectInput = true)}>✗ Reject</button>
+                    {/if}
+
+                    <button class="btn btn-ghost btn-sm" on:click={handleDeleteRequest}>Hapus Request</button>
+                    <button class="btn btn-ghost btn-sm text-error" on:click={handleDeleteRecord}>Hapus Record</button>
+                </div>
+            </div>
         {:else}
             <div class="flex items-center justify-center h-full opacity-40">Pilih request untuk ditinjau</div>
         {/if}
@@ -1140,31 +1148,17 @@ git commit -m "feat(item-masuk): PT user request form and submit/revise/delete"
 </div>
 ```
 
-- [ ] **Step 3: Create the admin repair queue route**
-
-```svelte
-<!-- src/routes/outlet/item-masuk/repair/+page.svelte -->
-<script lang="ts">
-    import { itemMasuks, refreshItemMasuks } from "$library/stores/itemMasuk"
-    import AdminItemMasukQueue from "$library/components/outlet/item-masuk/AdminItemMasukQueue.svelte"
-</script>
-
-<div class="p-4 h-full">
-    <AdminItemMasukQueue records={$itemMasuks} on:action={refreshItemMasuks} />
-</div>
-```
-
-- [ ] **Step 4: Verify in browser**
+- [ ] **Step 2: Verify in browser**
 
 Run: `npm run dev`
 Navigate to `/outlet/item-masuk/repair`
-Expected: Admin queue shows the "im-2" record with pending request; clicking it shows diff table with approve/reject/delete buttons
+Expected: Left column lists pending PT requests; clicking "im-2" shows the diff table with approve/reject/delete buttons on the right
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 3: Commit**
 
 ```bash
-git add src/library/components/outlet/item-masuk/AdminItemMasukDiffView.svelte src/library/components/outlet/item-masuk/AdminItemMasukQueue.svelte src/routes/outlet/item-masuk/repair/+page.svelte
-git commit -m "feat(item-masuk): admin repair queue and diff view"
+git add src/routes/outlet/item-masuk/repair/+page.svelte
+git commit -m "feat(item-masuk): admin repair queue and inline diff view"
 ```
 
 ---
