@@ -12,6 +12,18 @@ The Retail page is the core transaction interface of Studio Bersih POS. It handl
 
 ---
 
+## Stock Architecture
+
+| Concern | Detail |
+|---|---|
+| Item catalog | Source items via `getMasterItems()` from `mock/master-items.ts` — replaces `mock/items.ts`. Use `priceLevel1` as the default retail price. |
+| Stock display | `RetailCartItem.stock` is populated from `getDisplayStock(itemId, outletId)` from `mock/master-items.ts` — never from raw `OutletStock.stock` |
+| Stock logging | Checkout submission calls `logStockMovement()` from `mock/stock-movements.ts` per line item |
+| Source: sale | `"sale"` — `delta = -qty` per item, `sourceId = transactionId` |
+| Source: void | `"sale_void"` — `delta = +qty` per item (restores stock), `sourceId = transactionId`. Applied when a PT approval reverses a sold item. |
+
+---
+
 ## 2. Data Model
 
 ```typescript

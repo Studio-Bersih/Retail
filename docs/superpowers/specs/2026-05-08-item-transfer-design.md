@@ -27,7 +27,7 @@ Item Transfer is a stock movement feature for transferring inventory between bra
 ### `TransferItem`
 ```typescript
 interface TransferItem {
-    productId: string
+    itemId: string    // MasterItem.id from mock/master-items.ts
     qty: number
 }
 ```
@@ -104,7 +104,7 @@ interface TransferRecord {
 ### `AcceptedItem`
 ```typescript
 interface AcceptedItem {
-    productId: string
+    itemId: string          // MasterItem.id from mock/master-items.ts
     qtySent: number         // copied from TransferRecord at time of acceptance
     qtyReceived: number     // confirmed by receiving branch
 }
@@ -167,22 +167,21 @@ interface TransferAcceptance {
 
 ---
 
-### `StockMovement`
-Append-only log entry created whenever stock physically moves.
+## Stock Architecture
 
-```typescript
-interface StockMovement {
-    id: string
-    transferId: string
-    acceptanceId: string            // always set — return entries are triggered by an acceptance
-    productId: string
-    fromOutletId: string
-    toOutletId: string
-    qty: number
-    type: "transfer" | "return"     // "return" = undelivered qty sent back to sender
-    createdAt: string               // ISO timestamp
-}
-```
+This feature uses the canonical `StockMovement` interface from `src/library/types/MasterItem.ts` and calls `logStockMovement()` from `mock/stock-movements.ts`. The local `StockMovement` type previously defined here is superseded.
+
+| Concern | Detail |
+|---|---|
+| Item reference | `itemId` maps to `MasterItem.id` — source items via `getMasterItems()` from `mock/master-items.ts` |
+| Stock display | Use `getDisplayStock(itemId, outletId)` from `mock/master-items.ts` — never read `OutletStock.stock` directly |
+| Stock logging | Every stock change calls `logStockMovement()` from `mock/stock-movements.ts` |
+| Source: transfer out | `"transfer_out"` — `delta = -qtyReceived` on **sender** outlet; `sourceId = acceptanceId` |
+| Source: transfer in | `"transfer_in"` — `delta = +qtyReceived` on **receiving** outlet; `sourceId = acceptanceId` |
+| Source: shortfall write-off | `"transfer_cancelled"` — `delta = -(qtySent - qtyReceived)` on **sender** when `returnable=false` and partial delivery; `sourceId = acceptanceId` |
+| Correction entries | PT approval on acceptance appends additional correcting `StockMovement` entries (delta = difference) rather than modifying existing ones |
+
+`getMovementsForTransfer(transferId)` in `useTransfer.ts` is implemented as `getStockMovements()` filtered where `sourceId` matches any acceptance belonging to that transfer.
 
 ---
 
@@ -269,7 +268,8 @@ src/routes/outlet/transfer/repair/+page.svelte
 ### Reused (read-only)
 ```
 src/library/mock/outlets.ts            — destination outlet list + outlet name lookup
-src/library/mock/items.ts              — product catalog for item picker
+src/library/mock/master-items.ts       — product catalog for item picker (replaces mock/items.ts)
+src/library/mock/stock-movements.ts    — logStockMovement() called by acceptTransfer() and PT approval
 src/library/utils/repairDiff.ts        — getChangedFields()
 src/library/stores/auth.ts             — $auth for createdBy + fromOutletId
 src/library/validator/useDefault.ts    — date range defaults
@@ -349,17 +349,21 @@ getMovementsForTransfer(transferId: string): StockMovement[]
 ### Stock Effect Logic
 
 **`acceptTransfer()`:**
-1. For each item in `AcceptedItem`: deduct `qtyReceived` from `fromOutlet` mock stock
-2. For each item in `AcceptedItem`: add `qtyReceived` to `toOutlet` mock stock
-3. If `!returnable && qtyReceived < qtySent`: also deduct `qtySent - qtyReceived` from `fromOutlet` mock stock (shortfall written off); log a `"return"` `StockMovement` with `toOutletId = fromOutletId` to record the write-off
-4. If `returnable && qtyReceived < qtySent`: shortfall stays at sender — no additional deduction needed
-5. Log a `"transfer"` `StockMovement` per item for the received quantities
-6. Check if all destinations for the parent `TransferRecord` have now responded; if so, set `TransferRecord` status to `"completed"`
+1. For each item in `AcceptedItem`:
+   - Update `OutletStock.stock` for sender: `stock -= qtyReceived`
+   - Call `logStockMovement({ itemId, outletId: fromOutletId, delta: -qtyReceived, source: "transfer_out", sourceId: acceptanceId, ... })`
+   - Update `OutletStock.stock` for receiver: `stock += qtyReceived`
+   - Call `logStockMovement({ itemId, outletId: toOutletId, delta: +qtyReceived, source: "transfer_in", sourceId: acceptanceId, ... })`
+2. If `!returnable && qtyReceived < qtySent`: for the shortfall `(qtySent - qtyReceived)`:
+   - Update `OutletStock.stock` for sender: `stock -= shortfall`
+   - Call `logStockMovement({ ..., delta: -shortfall, source: "transfer_cancelled", sourceId: acceptanceId })`
+3. If `returnable && qtyReceived < qtySent`: shortfall stays at sender — no additional deduction
+4. Check if all destinations for the parent `TransferRecord` have responded; if so, set `TransferRecord.status = "completed"`
 
 **`approveAcceptanceRepairRequest()`:**
-1. Compare original `qtyReceived` vs proposed `qtyReceived` per item; apply delta to receiving outlet stock
-2. If `returnable`: apply inverse delta to sender stock for any return-qty changes
-3. Append correcting `StockMovement` entries for the delta
+1. Compute `delta = newQtyReceived - oldQtyReceived` per item
+2. Update `OutletStock.stock` for receiver and sender accordingly
+3. Call `logStockMovement()` for each changed item with the correcting delta and `source: "transfer_in"` / `"transfer_out"` — corrections append new entries, never modify existing ones
 
 **`activateScheduledTransfers()`:**
 Iterates `mockTransferRecords` and sets `status = "pending"` on any record where `tanggal <= today` and `status === "scheduled"`.
@@ -405,4 +409,4 @@ Same flow as above but scoped to the `TransferAcceptance` record. Admin queue su
 - Movement log is append-only; corrections from PT approval add new entries rather than modifying existing ones
 - `activateScheduledTransfers()` is called on page load in `/outlet/transfer/+page.svelte` — no background scheduler
 - `mockOutlets` from `src/library/mock/outlets.ts` is reused for destination picker and outlet name display
-- `mockItems` from `src/library/mock/items.ts` is reused for the product picker in `TransferForm`
+- `getMasterItems()` from `src/library/mock/master-items.ts` is used for the product picker in `TransferForm` — replaces the old `mock/items.ts`

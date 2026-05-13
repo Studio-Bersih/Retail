@@ -21,13 +21,25 @@ Item Masuk is a stock intake feature. When stock arrives from a supplier, a reco
 
 ---
 
+## Stock Architecture
+
+| Concern | Detail |
+|---|---|
+| Item reference | `itemId` maps to `MasterItem.id` — source items via `getMasterItems()` from `mock/master-items.ts` |
+| Stock display | Use `getDisplayStock(itemId, outletId)` from `mock/master-items.ts` everywhere — never read `OutletStock.stock` directly |
+| Stock logging | Every stock change calls `logStockMovement()` from `mock/stock-movements.ts` |
+| Source: submission | `"item_masuk"` — one entry per line item, `delta = +qty`, `sourceId = itemMasukId` |
+| Source: PT approval | `"item_masuk_pt"` — one correcting entry per changed line item, `delta = new qty - old qty`, `sourceId = repairRequestId` |
+
+---
+
 ## Feature 1: Item Masuk Creation
 
 ### Form Fields
 
 - **Pilih Supplier** — single selection from hardcoded supplier list
 - **Items** — one or more products, each with:
-  - `productId` — SKU from product catalog
+  - `itemId` — `MasterItem.id` from `mock/master-items.ts`
   - `qty` — quantity received
   - `hargaBeli` — purchase price per unit; always stored, shown in UI only when `outletConfig.showHargaBeli = true`
 - **Keterangan** — free-text notes
@@ -103,7 +115,7 @@ interface ItemMasukSnapshot {
   outletId: string
   createdBy: string                  // userId
   items: Array<{
-    productId: string
+    itemId: string                   // MasterItem.id from mock/master-items.ts
     qty: number
     hargaBeli: number                // always stored; UI display gated by outletConfig
   }>

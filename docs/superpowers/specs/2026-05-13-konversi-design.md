@@ -103,7 +103,11 @@ interface FormulaStockSummaryRow {
 | `"buka"` (unpack) | `stock -= headQty × multiplier` | `stock += component.qty × multiplier` |
 | `"buat"` (bundle) | `stock += headQty × multiplier` | `stock -= component.qty × multiplier` |
 
-**Stock source:** All checks use `getDisplayStock(itemId, outletId)` — real stock + any open pre-adjustment deltas. If `item.stock === 0` but `getDisplayStock() > 0` for a source item, the execution modal shows an amber warning banner. The conversion still proceeds — the warning is informational only.
+**Stock source:** All checks use `getDisplayStock(itemId, outletId)` from `mock/master-items.ts` — `OutletStock.stock + OutletStock.preAdjDelta`. If `OutletStock.stock === 0` but `getDisplayStock() > 0` for a source item, the execution modal shows an amber warning banner. The conversion still proceeds — the warning is informational only.
+
+**Stock logging:** `executeConversion()` calls `logStockMovement()` from `mock/stock-movements.ts` for every item affected:
+- Consumed items (source of the direction): `source: "konversi_consume"`, `delta = -(qty × multiplier)`, `sourceId = conversionLogId`
+- Produced items (output of the direction): `source: "konversi_produce"`, `delta = +(qty × multiplier)`, `sourceId = conversionLogId`
 
 ---
 
@@ -257,7 +261,7 @@ executeConversion(payload: ExecuteConversionPayload, userId: string): Conversion
 // Sets usedPreAdjustment: true if any source item had item.stock === 0.
 ```
 
-`getDisplayStock(itemId, outletId)` from `mock/pre-adjustments.ts` is reused directly — no duplicate.
+`getDisplayStock(itemId, outletId)` is imported from `mock/master-items.ts` — not from `mock/pre-adjustments.ts`.
 
 ---
 

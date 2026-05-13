@@ -67,12 +67,20 @@ interface ActiveTransferSummary {
 
 ### Stock Display Rule
 
-`item.stock` must never be read directly in any cashier-facing UI. All stock figures go through:
+`OutletStock.stock` must never be read directly in any cashier-facing UI. All stock figures go through:
 
 ```typescript
 getDisplayStock(itemId: string, outletId: string): number
-// → item.stock + sum(delta) where status === "open" for that item/outlet
+// from mock/master-items.ts — returns OutletStock.stock + OutletStock.preAdjDelta
 ```
+
+`OutletStock.preAdjDelta` is the pre-computed sum of all open pre-adjustment deltas for that item/outlet. It is maintained in sync by the pre-adjustment mock functions:
+
+- `createPreAdjustment()` → `OutletStock.preAdjDelta += delta`
+- `revertPreAdjustment()` → `OutletStock.preAdjDelta -= delta`
+- `forceClosePreAdjustment()` → `OutletStock.preAdjDelta -= delta`
+
+**Pre-adjustments do not write `StockMovement` entries** — they are a virtual overlay on top of real stock, not a real stock change. Only `revertPreAdjustment()` / `forceClosePreAdjustment()` expose the real stock (potentially negative), which triggers the reconciliation flow against Item Masuk.
 
 ---
 
@@ -224,9 +232,9 @@ Every component that shows a stock quantity to a cashier must call `getDisplaySt
 
 ## Mock Functions (`mock/pre-adjustments.ts`)
 
+> `getDisplayStock()` is defined in `mock/master-items.ts`, not here. Import it from there.
+
 ```typescript
-// Stock display — replaces all direct item.stock reads in cashier UI
-getDisplayStock(itemId: string, outletId: string): number
 
 // Context for modal warning banner
 getActiveTransfersForItem(itemId: string, outletId: string): ActiveTransferSummary[]

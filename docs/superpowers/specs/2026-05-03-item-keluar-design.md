@@ -20,12 +20,24 @@ Item Keluar is a stock disposal feature. When stock is thrown out (due to bugs, 
 
 ---
 
+## Stock Architecture
+
+| Concern | Detail |
+|---|---|
+| Item reference | `itemId` maps to `MasterItem.id` — source items via `getMasterItems()` from `mock/master-items.ts` |
+| Stock display | Use `getDisplayStock(itemId, outletId)` from `mock/master-items.ts` everywhere — never read `OutletStock.stock` directly |
+| Stock logging | Every stock change calls `logStockMovement()` from `mock/stock-movements.ts` |
+| Source: submission | `"item_keluar"` — one entry per line item, `delta = -qty`, `sourceId = itemKeluarId` |
+| Source: PT approval | `"item_keluar_pt"` — one correcting entry per changed line item, `delta = -(new qty - old qty)`, `sourceId = repairRequestId` |
+
+---
+
 ## Feature 1: Item Keluar Creation
 
 ### Form Fields
 
 - **Items** — one or more products, each with:
-  - `productId` — SKU from product catalog
+  - `itemId` — `MasterItem.id` from `mock/master-items.ts`
   - `qty` — quantity disposed
   - `unitPrice` — entered manually by user (not auto-filled from catalog)
 - **Kategori** — single selection from fixed list: `"Bugs"` | `"Afkir Terdisplay"` | `"Rotten"`
@@ -108,7 +120,7 @@ interface ItemKeluarSnapshot {
   outletId: string
   createdBy: string                  // userId
   items: Array<{
-    productId: string
+    itemId: string                   // MasterItem.id from mock/master-items.ts
     qty: number
     unitPrice: number                // manual entry
   }>
