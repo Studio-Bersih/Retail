@@ -68,6 +68,7 @@ export interface MasterItem {
     priceLevel3: number       // 0 = not configured
     priceLevel4: number       // 0 = not configured
     priceLevel5: number       // 0 = not configured
+    itemType: "raw_material" | "finished_good" | "both"
     isActive: boolean
     availableRegions: string[]
     createdBy: string
@@ -113,6 +114,7 @@ export interface CreateMasterItemPayload {
     priceLevel3: number
     priceLevel4: number
     priceLevel5: number
+    itemType: "raw_material" | "finished_good" | "both"
     isActive: boolean
     availableRegions: string[]
 }
@@ -335,6 +337,7 @@ const basePayload = {
     imageUrl: null,
     category: 'Minuman',
     satuan: 'Pcs',
+    itemType: 'finished_good' as const,
     weight: null,
     height: null,
     priceLevel1: 10000,
@@ -522,6 +525,7 @@ function seedItems(): MasterItem[] {
             imageUrl: null,
             category: 'Minuman',
             satuan: 'Slop',
+            itemType: 'finished_good',
             weight: null,
             height: null,
             priceLevel1: 45000,
@@ -545,6 +549,7 @@ function seedItems(): MasterItem[] {
             imageUrl: null,
             category: 'Minuman',
             satuan: 'Pcs',
+            itemType: 'finished_good',
             weight: 500,
             height: null,
             priceLevel1: 8000,
@@ -568,6 +573,7 @@ function seedItems(): MasterItem[] {
             imageUrl: null,
             category: 'Makanan',
             satuan: 'Pcs',
+            itemType: 'finished_good',
             weight: 120,
             height: null,
             priceLevel1: 12000,
@@ -725,6 +731,7 @@ Handles both create (`item` prop is `null`) and edit (`item` prop is a `MasterIt
     let priceLevel3 = item?.priceLevel3 ? String(item.priceLevel3) : ''
     let priceLevel4 = item?.priceLevel4 ? String(item.priceLevel4) : ''
     let priceLevel5 = item?.priceLevel5 ? String(item.priceLevel5) : ''
+    let itemType: "raw_material" | "finished_good" | "both" = item?.itemType ?? 'finished_good'
     let isActive = item?.isActive ?? true
     let selectedRegions: string[] = item?.availableRegions ? [...item.availableRegions] : []
 
@@ -762,6 +769,7 @@ Handles both create (`item` prop is `null`) and edit (`item` prop is a `MasterIt
             imageUrl: imageUrl.trim() || null,
             category: category.trim(),
             satuan: satuan.trim(),
+            itemType,
             weight: weight ? Number(weight) : null,
             height: height ? Number(height) : null,
             priceLevel1: Number(priceLevel1),
@@ -825,6 +833,14 @@ Handles both create (`item` prop is `null`) and edit (`item` prop is a `MasterIt
             <div class="form-control">
                 <label class="label py-1"><span class="label-text text-xs opacity-60">Satuan <span class="text-error">*</span></span></label>
                 <input type="text" class="input input-bordered input-sm" placeholder="Pcs, Slop, Kg..." bind:value={satuan} />
+            </div>
+            <div class="form-control">
+                <label class="label py-1"><span class="label-text text-xs opacity-60">Tipe Item <span class="text-error">*</span></span></label>
+                <select class="select select-bordered select-sm" bind:value={itemType}>
+                    <option value="finished_good">Finished Good — dijual via POS</option>
+                    <option value="raw_material">Raw Material — bahan baku / komponen</option>
+                    <option value="both">Both — dijual dan dipakai sebagai bahan</option>
+                </select>
             </div>
             <div class="form-control">
                 <label class="label py-1"><span class="label-text text-xs opacity-60">Berat (gram)</span></label>

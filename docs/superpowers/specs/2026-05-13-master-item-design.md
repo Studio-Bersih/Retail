@@ -37,6 +37,10 @@ interface MasterItem {
     priceLevel3: number              // e.g. food delivery apps (0 = not set)
     priceLevel4: number              // e.g. e-commerce (0 = not set)
     priceLevel5: number              // custom (0 = not set)
+    itemType: "raw_material" | "finished_good" | "both"
+                                     // raw_material = input only (flour, sugar, packaging)
+                                     // finished_good = sold via POS only
+                                     // both = dual-role (e.g. Yakult Pcs — sold AND used as component)
     isActive: boolean                // false = hidden from POS search and all features
     availableRegions: string[]       // e.g. ["Jakarta", "Bandung"]
     createdBy: string
@@ -171,6 +175,7 @@ The function reads current `OutletStock.stock` to compute `stockBefore`, applies
 | Barcode | text | No | EAN/UPC etc. |
 | Kategori | text | Yes | Free text (no master list yet) |
 | Satuan | text | Yes | e.g. Pcs, Slop, Kg |
+| Tipe Item | select | Yes | `raw_material` / `finished_good` / `both` — controls picker filtering across features |
 | Berat (gram) | number | No | Maps to `weight` |
 | Tinggi (cm) | number | No | Maps to `height` |
 | Deskripsi | textarea | No | |
@@ -202,11 +207,16 @@ The function reads current `OutletStock.stock` to compute `stockBefore`, applies
 ## Business Rules
 
 1. **SKU is unique** across all master items. Validate on save.
-2. **isActive = false** hides the item from all feature searches. It does not affect existing stock records or movement history.
-3. **priceLevel1 is always required.** Levels 2–5 may be 0 (not configured).
-4. **Regions removed on edit** do not trigger deletion of `OutletStock`. Historical stock data is never destroyed.
-5. **imageUrl** is stored as a URL string. In mock, any file selection stores a placeholder URL. Real implementation would upload to object storage.
-6. **`getDisplayStock()` everywhere.** No feature may read `OutletStock.stock` directly without adding `preAdjDelta`.
+2. **`itemType` controls picker filtering** across features:
+   - Output item pickers (Struktur Produk, Rencana Produksi) default to `finished_good | both`
+   - Component/input pickers (Struktur Produk, Rencana Produksi) default to `raw_material | both`
+   - Konversi formula pickers show all types
+   - POS search shows only `finished_good | both` items
+3. **isActive = false** hides the item from all feature searches. It does not affect existing stock records or movement history.
+4. **priceLevel1 is always required.** Levels 2–5 may be 0 (not configured).
+5. **Regions removed on edit** do not trigger deletion of `OutletStock`. Historical stock data is never destroyed.
+6. **imageUrl** is stored as a URL string. In mock, any file selection stores a placeholder URL. Real implementation would upload to object storage.
+7. **`getDisplayStock()` everywhere.** No feature may read `OutletStock.stock` directly without adding `preAdjDelta`.
 
 ---
 
@@ -244,6 +254,7 @@ interface CreateMasterItemPayload {
     imageUrl: string | null
     category: string
     satuan: string
+    itemType: "raw_material" | "finished_good" | "both"
     weight: number | null
     height: number | null
     priceLevel1: number
