@@ -562,8 +562,15 @@ POST   /api/stock-movements          ← db.transaction()
 
 ---
 
-## Open Questions
+## Resolved Decisions
 
-- What port does the backend bind to? (suggest `3000` for dev, configurable via `PORT` env var)
-- Should `GET /api/transactions` and `GET /api/orders` be paginated server-side or return full filtered sets? (suggest server-side pagination — `page` + `limit` params)
-- Does the factory admin have its own auth scope, or does `role: 'admin'` in the JWT suffice for access control on admin-only endpoints?
+- **Port:** `3000` in development, `10565` in production. Controlled via `PORT` env var (add to `env.ts` required list).
+- **Pagination:** Server-side on all list endpoints. Query params: `page` (1-based, default `1`) + `limit` (default `25`, max `100`). All paginated responses return a consistent envelope:
+  ```json
+  {
+    "data": [],
+    "meta": { "page": 1, "limit": 25, "total": 142, "totalPages": 6 }
+  }
+  ```
+  Non-paginated endpoints (outlets, payment-methods, transaction-types, promos) return plain arrays — they are small, cacheable, and fetched once.
+- **Factory admin access:** `role: 'admin'` in the JWT payload is sufficient. Admin-only endpoints (`POST /api/coupons`, `PUT /api/coupons/:kode`, etc.) check `session.role === 'admin'` in the controller and return `403` via `Errors.FORBIDDEN` if not.
