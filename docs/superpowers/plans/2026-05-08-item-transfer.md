@@ -4,13 +4,15 @@
 
 **Goal:** Build an inter-outlet stock transfer feature where Branch A creates a transfer to one or more branches, each branch independently accepts (with confirmed quantities) or rejects it, stock moves only on acceptance, with a scheduler for future-dated transfers, a stock movement log, and PT (Perbaikan Transaksi) support on both transfer and acceptance records.
 
-**Architecture:** Two separate versioned record types — `TransferRecord` (sender side) and `TransferAcceptance` (per receiving branch) — following the same snapshot pattern as Item Masuk/Keluar/Kas. A `mockOutletStock` map tracks per-outlet stock. Stock moves at acceptance time. PT on `TransferRecord` is blocked once any acceptance exists; PT on `TransferAcceptance` is always available post-response.
+**Architecture:** Two separate versioned record types — `TransferRecord` (sender side) and `TransferAcceptance` (per receiving branch) — following the same snapshot pattern as Item Masuk/Keluar/Kas. Stock is managed via `logStockMovement()` from `mock/master-items.ts` — the canonical ledger shared across all features. Stock moves at acceptance time. PT on `TransferRecord` is blocked once any acceptance exists; PT on `TransferAcceptance` is always available post-response.
 
 **Tech Stack:** SvelteKit · TypeScript · TailwindCSS · DaisyUI · Svelte Stores · Vitest (unit tests for all hook logic)
 
 > **Note:** `$lib` resolves to `src/library/`. Ensure `svelte.config.js` has `kit: { alias: { $lib: 'src/library' } }`.
 >
 > **Prerequisites:** Working SvelteKit project with TailwindCSS + DaisyUI, and `src/library/stores/auth.ts` exporting a writable `auth` store with shape `{ userId: string; outletId: string; userName: string; role: string }`. `src/library/utils/repairDiff.ts` and `src/library/validator/useDefault.ts` must exist (created in Akuntansi plan — create them here if absent).
+>
+> **Master Item prerequisite (must exist before building Transfer):** `src/library/mock/master-items.ts` must export `getMasterItems(): MasterItem[]`, `getDisplayStock(itemId: string, outletId: string): number`, `mockOutletStock: Record<string, { stock: number; preAdjDelta: number }>`, and `logStockMovement(entry: { itemId: string; outletId: string; delta: number; source: StockMovementSource; sourceId: string }): void`. Keys in `mockOutletStock` use composite format `"${itemId}_${outletId}"`. These are built in the Master Item plan.
 
 ---
 
@@ -18,7 +20,7 @@
 
 **Created:**
 - `src/library/types/Transfer.ts` — all Transfer TypeScript interfaces
-- `src/library/mock/transfer.ts` — seed records + `mockOutletStock` map
+- `src/library/mock/transfer.ts` — seed records only (stock managed in `mock/master-items.ts`)
 - `src/library/hooks/useTransfer.ts` — all transfer operations
 - `src/library/hooks/useTransfer.test.ts` — Vitest unit tests
 - `src/library/stores/transfer.ts` — reactive stores + `refreshTransfer()`
@@ -48,7 +50,7 @@
 // src/library/types/Transfer.ts
 
 export interface TransferItem {
-    productId: string
+    itemId: string
     qty: number
 }
 
@@ -98,7 +100,7 @@ export interface TransferRecord {
 }
 
 export interface AcceptedItem {
-    productId: string
+    itemId: string
     qtySent: number
     qtyReceived: number
 }
@@ -144,11 +146,11 @@ export interface TransferAcceptance {
     isDeleted: boolean
 }
 
-export interface StockMovement {
+export interface TransferMovementLog {
     id: string
     transferId: string
     acceptanceId: string
-    productId: string
+    itemId: string
     fromOutletId: string
     toOutletId: string
     qty: number
@@ -198,14 +200,8 @@ export default useDefault
 
 ```typescript
 // src/library/mock/transfer.ts
-import type { TransferRecord, TransferAcceptance, StockMovement } from "$lib/types/Transfer"
-
-// Mutable per-outlet stock map used by useTransfer.ts
-export const mockOutletStock: Record<string, Record<string, number>> = {
-    "outlet-1": { "item-001": 100, "item-002": 50, "item-003": 75 },
-    "outlet-2": { "item-001": 20,  "item-002": 30, "item-003": 10 },
-    "outlet-3": { "item-001": 15,  "item-002": 25, "item-003": 40 },
-}
+import type { TransferRecord, TransferAcceptance, TransferMovementLog } from "$lib/types/Transfer"
+// Stock is owned by mock/master-items.ts — do NOT define mockOutletStock here
 
 // TRF-001: completed, outlet-1 → outlet-2, partial accept (returnable=true), acceptance has approved PT
 const trf001Snapshot = {
@@ -213,7 +209,7 @@ const trf001Snapshot = {
     fromOutletId: "outlet-1",
     createdBy: "user-1",
     tanggal: "2026-05-01",
-    destinations: [{ outletId: "outlet-2", items: [{ productId: "item-001", qty: 10 }, { productId: "item-002", qty: 5 }] }],
+    destinations: [{ outletId: "outlet-2", items: [{ itemId: "item-001", qty: 10 }, { itemId: "item-002", qty: 5 }] }],
     keterangan: "Restock cabang 2",
     returnable: true,
     status: "completed" as const,
@@ -224,7 +220,7 @@ const acc001SnapV1 = {
     transferId: "TRF-001",
     receivingOutletId: "outlet-2",
     respondedBy: "user-2",
-    items: [{ productId: "item-001", qtySent: 10, qtyReceived: 8 }, { productId: "item-002", qtySent: 5, qtyReceived: 5 }],
+    items: [{ itemId: "item-001", qtySent: 10, qtyReceived: 8 }, { itemId: "item-002", qtySent: 5, qtyReceived: 5 }],
     status: "accepted" as const,
 }
 const acc001SnapV2 = {
@@ -232,7 +228,7 @@ const acc001SnapV2 = {
     transferId: "TRF-001",
     receivingOutletId: "outlet-2",
     respondedBy: "user-2",
-    items: [{ productId: "item-001", qtySent: 10, qtyReceived: 9 }, { productId: "item-002", qtySent: 5, qtyReceived: 5 }],
+    items: [{ itemId: "item-001", qtySent: 10, qtyReceived: 9 }, { itemId: "item-002", qtySent: 5, qtyReceived: 5 }],
     status: "accepted" as const,
 }
 
@@ -254,8 +250,8 @@ export const mockTransferRecords: TransferRecord[] = [
                 id: "snap-trf002-v1", fromOutletId: "outlet-1", createdBy: "user-1",
                 tanggal: "2026-05-06",
                 destinations: [
-                    { outletId: "outlet-2", items: [{ productId: "item-001", qty: 5 }] },
-                    { outletId: "outlet-3", items: [{ productId: "item-002", qty: 8 }] },
+                    { outletId: "outlet-2", items: [{ itemId: "item-001", qty: 5 }] },
+                    { outletId: "outlet-3", items: [{ itemId: "item-002", qty: 8 }] },
                 ],
                 keterangan: "Transfer multi-cabang", returnable: false, status: "pending" as const,
             },
@@ -273,7 +269,7 @@ export const mockTransferRecords: TransferRecord[] = [
             snapshot: {
                 id: "snap-trf003-v1", fromOutletId: "outlet-1", createdBy: "user-1",
                 tanggal: "2099-12-31",
-                destinations: [{ outletId: "outlet-2", items: [{ productId: "item-003", qty: 20 }] }],
+                destinations: [{ outletId: "outlet-2", items: [{ itemId: "item-003", qty: 20 }] }],
                 keterangan: "Transfer terjadwal", returnable: true, status: "scheduled" as const,
             },
             changedFields: [], createdBy: "user-1", createdAt: "2026-05-07T10:00:00.000Z", requestId: null,
@@ -290,7 +286,7 @@ export const mockTransferRecords: TransferRecord[] = [
             snapshot: {
                 id: "snap-trf004-v1", fromOutletId: "outlet-2", createdBy: "user-2",
                 tanggal: "2026-05-05",
-                destinations: [{ outletId: "outlet-1", items: [{ productId: "item-002", qty: 15 }] }],
+                destinations: [{ outletId: "outlet-1", items: [{ itemId: "item-002", qty: 15 }] }],
                 keterangan: "Return stok", returnable: false, status: "completed" as const,
             },
             changedFields: [], createdBy: "user-2", createdAt: "2026-05-05T11:00:00.000Z", requestId: null,
@@ -324,7 +320,7 @@ export const mockTransferAcceptances: TransferAcceptance[] = [
         currentVersionIndex: 1,
         versions: [{
             index: 1, type: "original",
-            snapshot: { id: "snap-acc002-v1", transferId: "TRF-002", receivingOutletId: "outlet-2", respondedBy: "user-2", items: [{ productId: "item-001", qtySent: 5, qtyReceived: 5 }], status: "accepted" as const },
+            snapshot: { id: "snap-acc002-v1", transferId: "TRF-002", receivingOutletId: "outlet-2", respondedBy: "user-2", items: [{ itemId: "item-001", qtySent: 5, qtyReceived: 5 }], status: "accepted" as const },
             changedFields: [], createdBy: "user-2", createdAt: "2026-05-06T14:00:00.000Z", requestId: null,
         }],
         pendingRequest: null,
@@ -357,7 +353,7 @@ export const mockTransferAcceptances: TransferAcceptance[] = [
             id: "PT-ACC-004",
             acceptanceId: "ACC-004",
             status: "rejected",
-            proposedSnapshot: { id: "snap-acc004-proposed", transferId: "TRF-004", receivingOutletId: "outlet-1", respondedBy: "user-1", items: [{ productId: "item-002", qtySent: 15, qtyReceived: 10 }], status: "accepted" as const },
+            proposedSnapshot: { id: "snap-acc004-proposed", transferId: "TRF-004", receivingOutletId: "outlet-1", respondedBy: "user-1", items: [{ itemId: "item-002", qtySent: 15, qtyReceived: 10 }], status: "accepted" as const },
             submittedBy: "user-1",
             submittedAt: "2026-05-06T08:00:00.000Z",
             rejectionReason: "Data penerimaan tidak sesuai bukti",
@@ -367,10 +363,10 @@ export const mockTransferAcceptances: TransferAcceptance[] = [
     },
 ]
 
-export const mockStockMovements: StockMovement[] = [
-    { id: "MOV-001", transferId: "TRF-001", acceptanceId: "ACC-001", productId: "item-001", fromOutletId: "outlet-1", toOutletId: "outlet-2", qty: 8, type: "transfer", createdAt: "2026-05-01T10:00:00.000Z" },
-    { id: "MOV-002", transferId: "TRF-001", acceptanceId: "ACC-001", productId: "item-002", fromOutletId: "outlet-1", toOutletId: "outlet-2", qty: 5, type: "transfer", createdAt: "2026-05-01T10:00:00.000Z" },
-    { id: "MOV-003", transferId: "TRF-002", acceptanceId: "ACC-002", productId: "item-001", fromOutletId: "outlet-1", toOutletId: "outlet-2", qty: 5, type: "transfer", createdAt: "2026-05-06T14:00:00.000Z" },
+export const mockStockMovements: TransferMovementLog[] = [
+    { id: "MOV-001", transferId: "TRF-001", acceptanceId: "ACC-001", itemId: "item-001", fromOutletId: "outlet-1", toOutletId: "outlet-2", qty: 8, type: "transfer", createdAt: "2026-05-01T10:00:00.000Z" },
+    { id: "MOV-002", transferId: "TRF-001", acceptanceId: "ACC-001", itemId: "item-002", fromOutletId: "outlet-1", toOutletId: "outlet-2", qty: 5, type: "transfer", createdAt: "2026-05-01T10:00:00.000Z" },
+    { id: "MOV-003", transferId: "TRF-002", acceptanceId: "ACC-002", itemId: "item-001", fromOutletId: "outlet-1", toOutletId: "outlet-2", qty: 5, type: "transfer", createdAt: "2026-05-06T14:00:00.000Z" },
 ]
 ```
 
@@ -395,15 +391,18 @@ git commit -m "feat(transfer): add types, mock data, and shared utilities"
 // src/library/hooks/useTransfer.test.ts
 import { describe, it, expect, beforeEach } from "vitest"
 import { auth } from "$lib/stores/auth"
-import { mockTransferRecords, mockTransferAcceptances, mockStockMovements, mockOutletStock } from "$lib/mock/transfer"
+import { mockTransferRecords, mockTransferAcceptances, mockStockMovements } from "$lib/mock/transfer"
+import { mockOutletStock } from "$lib/mock/master-items"
 import { createTransfer, activateScheduledTransfers } from "./useTransfer"
 
 function resetMocks() {
     mockTransferRecords.length = 0
     mockTransferAcceptances.length = 0
     mockStockMovements.length = 0
-    mockOutletStock["outlet-1"] = { "item-001": 100, "item-002": 50 }
-    mockOutletStock["outlet-2"] = { "item-001": 20,  "item-002": 30 }
+    mockOutletStock["item-001_outlet-1"] = { stock: 100, preAdjDelta: 0 }
+    mockOutletStock["item-002_outlet-1"] = { stock: 50,  preAdjDelta: 0 }
+    mockOutletStock["item-001_outlet-2"] = { stock: 20,  preAdjDelta: 0 }
+    mockOutletStock["item-002_outlet-2"] = { stock: 30,  preAdjDelta: 0 }
     auth.set({ userId: "user-1", outletId: "outlet-1", userName: "Test User", role: "cashier" })
 }
 
@@ -413,7 +412,7 @@ describe("createTransfer", () => {
     it("creates a pending record when tanggal is today or past", () => {
         const record = createTransfer({
             tanggal: "2020-01-01",
-            destinations: [{ outletId: "outlet-2", items: [{ productId: "item-001", qty: 5 }] }],
+            destinations: [{ outletId: "outlet-2", items: [{ itemId: "item-001", qty: 5 }] }],
             keterangan: "Test",
             returnable: true,
         })
@@ -428,7 +427,7 @@ describe("createTransfer", () => {
     it("creates a scheduled record when tanggal is in the future", () => {
         const record = createTransfer({
             tanggal: "2099-12-31",
-            destinations: [{ outletId: "outlet-2", items: [{ productId: "item-001", qty: 3 }] }],
+            destinations: [{ outletId: "outlet-2", items: [{ itemId: "item-001", qty: 3 }] }],
             keterangan: "Future",
             returnable: false,
         })
@@ -438,7 +437,7 @@ describe("createTransfer", () => {
     it("injects fromOutletId and createdBy from auth store", () => {
         const record = createTransfer({
             tanggal: "2020-01-01",
-            destinations: [{ outletId: "outlet-2", items: [{ productId: "item-001", qty: 1 }] }],
+            destinations: [{ outletId: "outlet-2", items: [{ itemId: "item-001", qty: 1 }] }],
             keterangan: "",
             returnable: true,
         })
@@ -450,12 +449,12 @@ describe("createTransfer", () => {
     it("does not affect stock on creation", () => {
         createTransfer({
             tanggal: "2020-01-01",
-            destinations: [{ outletId: "outlet-2", items: [{ productId: "item-001", qty: 50 }] }],
+            destinations: [{ outletId: "outlet-2", items: [{ itemId: "item-001", qty: 50 }] }],
             keterangan: "",
             returnable: true,
         })
-        expect(mockOutletStock["outlet-1"]["item-001"]).toBe(100)
-        expect(mockOutletStock["outlet-2"]["item-001"]).toBe(20)
+        expect(mockOutletStock["item-001_outlet-1"].stock).toBe(100)
+        expect(mockOutletStock["item-001_outlet-2"].stock).toBe(20)
     })
 })
 
@@ -465,7 +464,7 @@ describe("activateScheduledTransfers", () => {
     it("moves a scheduled record with past tanggal to pending", () => {
         const record = createTransfer({
             tanggal: "2099-12-31",
-            destinations: [{ outletId: "outlet-2", items: [{ productId: "item-001", qty: 1 }] }],
+            destinations: [{ outletId: "outlet-2", items: [{ itemId: "item-001", qty: 1 }] }],
             keterangan: "",
             returnable: true,
         })
@@ -478,7 +477,7 @@ describe("activateScheduledTransfers", () => {
     it("does not change a pending record", () => {
         const record = createTransfer({
             tanggal: "2020-01-01",
-            destinations: [{ outletId: "outlet-2", items: [{ productId: "item-001", qty: 1 }] }],
+            destinations: [{ outletId: "outlet-2", items: [{ itemId: "item-001", qty: 1 }] }],
             keterangan: "",
             returnable: true,
         })
@@ -503,8 +502,9 @@ Expected: FAIL — "Cannot find module './useTransfer'"
 // src/library/hooks/useTransfer.ts
 import { get } from "svelte/store"
 import { auth as authStore } from "$lib/stores/auth"
-import type { TransferRecord, TransferSnapshot, TransferVersion, CreateTransferPayload, TransferAcceptance, TransferAcceptanceSnapshot, AcceptedItem, StockMovement } from "$lib/types/Transfer"
-import { mockTransferRecords, mockTransferAcceptances, mockStockMovements, mockOutletStock } from "$lib/mock/transfer"
+import type { TransferRecord, TransferSnapshot, TransferVersion, CreateTransferPayload, TransferAcceptance, TransferAcceptanceSnapshot, AcceptedItem, TransferMovementLog } from "$lib/types/Transfer"
+import { mockTransferRecords, mockTransferAcceptances, mockStockMovements } from "$lib/mock/transfer"
+import { mockOutletStock, logStockMovement } from "$lib/mock/master-items"
 import { getChangedFields } from "$lib/utils/repairDiff"
 
 function uuid(): string {
@@ -599,49 +599,49 @@ describe("acceptTransfer", () => {
     it("increases receiver stock and decreases sender stock by qtyReceived", () => {
         const record = createTransfer({
             tanggal: "2020-01-01",
-            destinations: [{ outletId: "outlet-2", items: [{ productId: "item-001", qty: 10 }] }],
+            destinations: [{ outletId: "outlet-2", items: [{ itemId: "item-001", qty: 10 }] }],
             keterangan: "",
             returnable: true,
         })
-        acceptTransfer(record.id, "outlet-2", [{ productId: "item-001", qtySent: 10, qtyReceived: 8 }])
-        expect(mockOutletStock["outlet-1"]["item-001"]).toBe(92) // 100 - 8
-        expect(mockOutletStock["outlet-2"]["item-001"]).toBe(28) // 20 + 8
+        acceptTransfer(record.id, "outlet-2", [{ itemId: "item-001", qtySent: 10, qtyReceived: 8 }])
+        expect(mockOutletStock["item-001_outlet-1"].stock).toBe(92) // 100 - 8
+        expect(mockOutletStock["item-001_outlet-2"].stock).toBe(28) // 20 + 8
     })
 
     it("returnable=true: shortfall stays at sender — no extra deduction", () => {
         const record = createTransfer({
             tanggal: "2020-01-01",
-            destinations: [{ outletId: "outlet-2", items: [{ productId: "item-001", qty: 10 }] }],
+            destinations: [{ outletId: "outlet-2", items: [{ itemId: "item-001", qty: 10 }] }],
             keterangan: "",
             returnable: true,
         })
-        acceptTransfer(record.id, "outlet-2", [{ productId: "item-001", qtySent: 10, qtyReceived: 6 }])
+        acceptTransfer(record.id, "outlet-2", [{ itemId: "item-001", qtySent: 10, qtyReceived: 6 }])
         // sender: 100 - 6 = 94 (shortfall 4 stays at sender)
-        expect(mockOutletStock["outlet-1"]["item-001"]).toBe(94)
-        expect(mockOutletStock["outlet-2"]["item-001"]).toBe(26)
+        expect(mockOutletStock["item-001_outlet-1"].stock).toBe(94)
+        expect(mockOutletStock["item-001_outlet-2"].stock).toBe(26)
     })
 
     it("returnable=false: shortfall is also deducted from sender (written off)", () => {
         const record = createTransfer({
             tanggal: "2020-01-01",
-            destinations: [{ outletId: "outlet-2", items: [{ productId: "item-001", qty: 10 }] }],
+            destinations: [{ outletId: "outlet-2", items: [{ itemId: "item-001", qty: 10 }] }],
             keterangan: "",
             returnable: false,
         })
-        acceptTransfer(record.id, "outlet-2", [{ productId: "item-001", qtySent: 10, qtyReceived: 6 }])
+        acceptTransfer(record.id, "outlet-2", [{ itemId: "item-001", qtySent: 10, qtyReceived: 6 }])
         // sender: 100 - 6 - 4 = 90
-        expect(mockOutletStock["outlet-1"]["item-001"]).toBe(90)
-        expect(mockOutletStock["outlet-2"]["item-001"]).toBe(26)
+        expect(mockOutletStock["item-001_outlet-1"].stock).toBe(90)
+        expect(mockOutletStock["item-001_outlet-2"].stock).toBe(26)
     })
 
     it("logs a transfer StockMovement for qtyReceived", () => {
         const record = createTransfer({
             tanggal: "2020-01-01",
-            destinations: [{ outletId: "outlet-2", items: [{ productId: "item-001", qty: 5 }] }],
+            destinations: [{ outletId: "outlet-2", items: [{ itemId: "item-001", qty: 5 }] }],
             keterangan: "",
             returnable: true,
         })
-        acceptTransfer(record.id, "outlet-2", [{ productId: "item-001", qtySent: 5, qtyReceived: 5 }])
+        acceptTransfer(record.id, "outlet-2", [{ itemId: "item-001", qtySent: 5, qtyReceived: 5 }])
         const mov = mockStockMovements.find(m => m.type === "transfer" && m.transferId === record.id)!
         expect(mov.qty).toBe(5)
         expect(mov.fromOutletId).toBe("outlet-1")
@@ -651,11 +651,11 @@ describe("acceptTransfer", () => {
     it("logs a return StockMovement when returnable=false and there is a shortfall", () => {
         const record = createTransfer({
             tanggal: "2020-01-01",
-            destinations: [{ outletId: "outlet-2", items: [{ productId: "item-001", qty: 10 }] }],
+            destinations: [{ outletId: "outlet-2", items: [{ itemId: "item-001", qty: 10 }] }],
             keterangan: "",
             returnable: false,
         })
-        acceptTransfer(record.id, "outlet-2", [{ productId: "item-001", qtySent: 10, qtyReceived: 7 }])
+        acceptTransfer(record.id, "outlet-2", [{ itemId: "item-001", qtySent: 10, qtyReceived: 7 }])
         const ret = mockStockMovements.find(m => m.type === "return")!
         expect(ret.qty).toBe(3)
     })
@@ -663,11 +663,11 @@ describe("acceptTransfer", () => {
     it("marks transfer as completed when all destinations have responded", () => {
         const record = createTransfer({
             tanggal: "2020-01-01",
-            destinations: [{ outletId: "outlet-2", items: [{ productId: "item-001", qty: 3 }] }],
+            destinations: [{ outletId: "outlet-2", items: [{ itemId: "item-001", qty: 3 }] }],
             keterangan: "",
             returnable: true,
         })
-        acceptTransfer(record.id, "outlet-2", [{ productId: "item-001", qtySent: 3, qtyReceived: 3 }])
+        acceptTransfer(record.id, "outlet-2", [{ itemId: "item-001", qtySent: 3, qtyReceived: 3 }])
         expect(record.versions[record.currentVersionIndex - 1].snapshot.status).toBe("completed")
     })
 
@@ -675,13 +675,13 @@ describe("acceptTransfer", () => {
         const record = createTransfer({
             tanggal: "2020-01-01",
             destinations: [
-                { outletId: "outlet-2", items: [{ productId: "item-001", qty: 3 }] },
-                { outletId: "outlet-3", items: [{ productId: "item-002", qty: 2 }] },
+                { outletId: "outlet-2", items: [{ itemId: "item-001", qty: 3 }] },
+                { outletId: "outlet-3", items: [{ itemId: "item-002", qty: 2 }] },
             ],
             keterangan: "",
             returnable: true,
         })
-        acceptTransfer(record.id, "outlet-2", [{ productId: "item-001", qtySent: 3, qtyReceived: 3 }])
+        acceptTransfer(record.id, "outlet-2", [{ itemId: "item-001", qtySent: 3, qtyReceived: 3 }])
         expect(record.versions[record.currentVersionIndex - 1].snapshot.status).toBe("pending")
     })
 })
@@ -692,7 +692,7 @@ describe("rejectTransfer", () => {
     it("creates a rejected acceptance with empty items", () => {
         const record = createTransfer({
             tanggal: "2020-01-01",
-            destinations: [{ outletId: "outlet-2", items: [{ productId: "item-001", qty: 5 }] }],
+            destinations: [{ outletId: "outlet-2", items: [{ itemId: "item-001", qty: 5 }] }],
             keterangan: "",
             returnable: true,
         })
@@ -704,19 +704,19 @@ describe("rejectTransfer", () => {
     it("does not change any stock", () => {
         const record = createTransfer({
             tanggal: "2020-01-01",
-            destinations: [{ outletId: "outlet-2", items: [{ productId: "item-001", qty: 10 }] }],
+            destinations: [{ outletId: "outlet-2", items: [{ itemId: "item-001", qty: 10 }] }],
             keterangan: "",
             returnable: true,
         })
         rejectTransfer(record.id, "outlet-2")
-        expect(mockOutletStock["outlet-1"]["item-001"]).toBe(100)
-        expect(mockOutletStock["outlet-2"]["item-001"]).toBe(20)
+        expect(mockOutletStock["item-001_outlet-1"].stock).toBe(100)
+        expect(mockOutletStock["item-001_outlet-2"].stock).toBe(20)
     })
 
     it("marks transfer as completed when the only destination rejects", () => {
         const record = createTransfer({
             tanggal: "2020-01-01",
-            destinations: [{ outletId: "outlet-2", items: [{ productId: "item-001", qty: 5 }] }],
+            destinations: [{ outletId: "outlet-2", items: [{ itemId: "item-001", qty: 5 }] }],
             keterangan: "",
             returnable: false,
         })
@@ -759,20 +759,18 @@ export function acceptTransfer(transferId: string, receivingOutletId: string, it
     const acceptanceId = `ACC-${Date.now()}`
     const now = new Date().toISOString()
 
-    if (!mockOutletStock[fromOutletId]) mockOutletStock[fromOutletId] = {}
-    if (!mockOutletStock[receivingOutletId]) mockOutletStock[receivingOutletId] = {}
-
     for (const item of items) {
-        mockOutletStock[fromOutletId][item.productId] = (mockOutletStock[fromOutletId][item.productId] ?? 0) - item.qtyReceived
-        mockOutletStock[receivingOutletId][item.productId] = (mockOutletStock[receivingOutletId][item.productId] ?? 0) + item.qtyReceived
+        logStockMovement({ itemId: item.itemId, outletId: fromOutletId, delta: -item.qtyReceived, source: "transfer_out", sourceId: acceptanceId })
+        logStockMovement({ itemId: item.itemId, outletId: receivingOutletId, delta: item.qtyReceived, source: "transfer_in", sourceId: acceptanceId })
 
         const shortfall = item.qtySent - item.qtyReceived
         if (!returnable && shortfall > 0) {
-            mockOutletStock[fromOutletId][item.productId] -= shortfall
-            mockStockMovements.push({ id: uuid(), transferId, acceptanceId, productId: item.productId, fromOutletId, toOutletId: fromOutletId, qty: shortfall, type: "return", createdAt: now })
+            // Non-returnable shortfall: sender absorbs the difference (stock already debited above by qtyReceived only; debit the shortfall too)
+            logStockMovement({ itemId: item.itemId, outletId: fromOutletId, delta: -shortfall, source: "transfer_out", sourceId: acceptanceId })
+            mockStockMovements.push({ id: uuid(), transferId, acceptanceId, itemId: item.itemId, fromOutletId, toOutletId: fromOutletId, qty: shortfall, type: "return", createdAt: now })
         }
 
-        mockStockMovements.push({ id: uuid(), transferId, acceptanceId, productId: item.productId, fromOutletId, toOutletId: receivingOutletId, qty: item.qtyReceived, type: "transfer", createdAt: now })
+        mockStockMovements.push({ id: uuid(), transferId, acceptanceId, itemId: item.itemId, fromOutletId, toOutletId: receivingOutletId, qty: item.qtyReceived, type: "transfer", createdAt: now })
     }
 
     const snapshot: TransferAcceptanceSnapshot = { id: uuid(), transferId, receivingOutletId, respondedBy: auth.userId, items, status: "accepted" }
@@ -850,7 +848,7 @@ describe("Transfer PT user actions", () => {
     beforeEach(resetMocks)
 
     it("submitTransferRepairRequest sets pendingRequest with status pending", () => {
-        const record = createTransfer({ tanggal: "2020-01-01", destinations: [{ outletId: "outlet-2", items: [{ productId: "item-001", qty: 5 }] }], keterangan: "", returnable: true })
+        const record = createTransfer({ tanggal: "2020-01-01", destinations: [{ outletId: "outlet-2", items: [{ itemId: "item-001", qty: 5 }] }], keterangan: "", returnable: true })
         const proposed = { ...record.versions[0].snapshot, keterangan: "Updated" }
         submitTransferRepairRequest(record.id, proposed)
         expect(record.pendingRequest).not.toBeNull()
@@ -860,7 +858,7 @@ describe("Transfer PT user actions", () => {
     })
 
     it("reviseTransferRepairRequest increments revisions and resets to pending", () => {
-        const record = createTransfer({ tanggal: "2020-01-01", destinations: [{ outletId: "outlet-2", items: [{ productId: "item-001", qty: 5 }] }], keterangan: "", returnable: true })
+        const record = createTransfer({ tanggal: "2020-01-01", destinations: [{ outletId: "outlet-2", items: [{ itemId: "item-001", qty: 5 }] }], keterangan: "", returnable: true })
         const proposed = { ...record.versions[0].snapshot, keterangan: "v2" }
         submitTransferRepairRequest(record.id, { ...record.versions[0].snapshot, keterangan: "v1" })
         record.pendingRequest!.status = "rejected"
@@ -871,7 +869,7 @@ describe("Transfer PT user actions", () => {
     })
 
     it("deleteTransferRepairRequest clears pendingRequest", () => {
-        const record = createTransfer({ tanggal: "2020-01-01", destinations: [{ outletId: "outlet-2", items: [{ productId: "item-001", qty: 5 }] }], keterangan: "", returnable: true })
+        const record = createTransfer({ tanggal: "2020-01-01", destinations: [{ outletId: "outlet-2", items: [{ itemId: "item-001", qty: 5 }] }], keterangan: "", returnable: true })
         submitTransferRepairRequest(record.id, { ...record.versions[0].snapshot })
         deleteTransferRepairRequest(record.id)
         expect(record.pendingRequest).toBeNull()
@@ -882,17 +880,17 @@ describe("Acceptance PT user actions", () => {
     beforeEach(resetMocks)
 
     it("submitAcceptanceRepairRequest sets pendingRequest on the acceptance", () => {
-        const record = createTransfer({ tanggal: "2020-01-01", destinations: [{ outletId: "outlet-2", items: [{ productId: "item-001", qty: 5 }] }], keterangan: "", returnable: true })
-        const acceptance = acceptTransfer(record.id, "outlet-2", [{ productId: "item-001", qtySent: 5, qtyReceived: 5 }])
-        const proposed = { ...acceptance.versions[0].snapshot, items: [{ productId: "item-001", qtySent: 5, qtyReceived: 4 }] }
+        const record = createTransfer({ tanggal: "2020-01-01", destinations: [{ outletId: "outlet-2", items: [{ itemId: "item-001", qty: 5 }] }], keterangan: "", returnable: true })
+        const acceptance = acceptTransfer(record.id, "outlet-2", [{ itemId: "item-001", qtySent: 5, qtyReceived: 5 }])
+        const proposed = { ...acceptance.versions[0].snapshot, items: [{ itemId: "item-001", qtySent: 5, qtyReceived: 4 }] }
         submitAcceptanceRepairRequest(acceptance.id, proposed)
         expect(acceptance.pendingRequest).not.toBeNull()
         expect(acceptance.pendingRequest!.status).toBe("pending")
     })
 
     it("reviseAcceptanceRepairRequest increments revisions", () => {
-        const record = createTransfer({ tanggal: "2020-01-01", destinations: [{ outletId: "outlet-2", items: [{ productId: "item-001", qty: 5 }] }], keterangan: "", returnable: true })
-        const acceptance = acceptTransfer(record.id, "outlet-2", [{ productId: "item-001", qtySent: 5, qtyReceived: 5 }])
+        const record = createTransfer({ tanggal: "2020-01-01", destinations: [{ outletId: "outlet-2", items: [{ itemId: "item-001", qty: 5 }] }], keterangan: "", returnable: true })
+        const acceptance = acceptTransfer(record.id, "outlet-2", [{ itemId: "item-001", qtySent: 5, qtyReceived: 5 }])
         submitAcceptanceRepairRequest(acceptance.id, { ...acceptance.versions[0].snapshot })
         acceptance.pendingRequest!.status = "rejected"
         reviseAcceptanceRepairRequest(acceptance.id, { ...acceptance.versions[0].snapshot })
@@ -901,8 +899,8 @@ describe("Acceptance PT user actions", () => {
     })
 
     it("deleteAcceptanceRepairRequest clears pendingRequest", () => {
-        const record = createTransfer({ tanggal: "2020-01-01", destinations: [{ outletId: "outlet-2", items: [{ productId: "item-001", qty: 5 }] }], keterangan: "", returnable: true })
-        const acceptance = acceptTransfer(record.id, "outlet-2", [{ productId: "item-001", qtySent: 5, qtyReceived: 5 }])
+        const record = createTransfer({ tanggal: "2020-01-01", destinations: [{ outletId: "outlet-2", items: [{ itemId: "item-001", qty: 5 }] }], keterangan: "", returnable: true })
+        const acceptance = acceptTransfer(record.id, "outlet-2", [{ itemId: "item-001", qtySent: 5, qtyReceived: 5 }])
         submitAcceptanceRepairRequest(acceptance.id, { ...acceptance.versions[0].snapshot })
         deleteAcceptanceRepairRequest(acceptance.id)
         expect(acceptance.pendingRequest).toBeNull()
@@ -1006,7 +1004,7 @@ describe("Transfer PT admin actions", () => {
     beforeEach(resetMocks)
 
     it("approveTransferRepairRequest creates a new approved version and clears pendingRequest", () => {
-        const record = createTransfer({ tanggal: "2020-01-01", destinations: [{ outletId: "outlet-2", items: [{ productId: "item-001", qty: 5 }] }], keterangan: "old", returnable: true })
+        const record = createTransfer({ tanggal: "2020-01-01", destinations: [{ outletId: "outlet-2", items: [{ itemId: "item-001", qty: 5 }] }], keterangan: "old", returnable: true })
         submitTransferRepairRequest(record.id, { ...record.versions[0].snapshot, keterangan: "new" })
         approveTransferRepairRequest(record.id)
         expect(record.currentVersionIndex).toBe(2)
@@ -1017,7 +1015,7 @@ describe("Transfer PT admin actions", () => {
     })
 
     it("rejectTransferRepairRequest sets status rejected and stores reason", () => {
-        const record = createTransfer({ tanggal: "2020-01-01", destinations: [{ outletId: "outlet-2", items: [{ productId: "item-001", qty: 5 }] }], keterangan: "", returnable: true })
+        const record = createTransfer({ tanggal: "2020-01-01", destinations: [{ outletId: "outlet-2", items: [{ itemId: "item-001", qty: 5 }] }], keterangan: "", returnable: true })
         submitTransferRepairRequest(record.id, { ...record.versions[0].snapshot })
         rejectTransferRepairRequest(record.id, "Data tidak valid")
         expect(record.pendingRequest!.status).toBe("rejected")
@@ -1025,7 +1023,7 @@ describe("Transfer PT admin actions", () => {
     })
 
     it("deleteTransferRecord sets isDeleted and clears pendingRequest", () => {
-        const record = createTransfer({ tanggal: "2020-01-01", destinations: [{ outletId: "outlet-2", items: [{ productId: "item-001", qty: 5 }] }], keterangan: "", returnable: true })
+        const record = createTransfer({ tanggal: "2020-01-01", destinations: [{ outletId: "outlet-2", items: [{ itemId: "item-001", qty: 5 }] }], keterangan: "", returnable: true })
         submitTransferRepairRequest(record.id, { ...record.versions[0].snapshot })
         deleteTransferRecord(record.id)
         expect(record.isDeleted).toBe(true)
@@ -1037,35 +1035,35 @@ describe("Acceptance PT admin actions", () => {
     beforeEach(resetMocks)
 
     it("approveAcceptanceRepairRequest creates a new approved version and reconciles receiver stock (returnable=true)", () => {
-        const record = createTransfer({ tanggal: "2020-01-01", destinations: [{ outletId: "outlet-2", items: [{ productId: "item-001", qty: 10 }] }], keterangan: "", returnable: true })
-        const acceptance = acceptTransfer(record.id, "outlet-2", [{ productId: "item-001", qtySent: 10, qtyReceived: 8 }])
+        const record = createTransfer({ tanggal: "2020-01-01", destinations: [{ outletId: "outlet-2", items: [{ itemId: "item-001", qty: 10 }] }], keterangan: "", returnable: true })
+        const acceptance = acceptTransfer(record.id, "outlet-2", [{ itemId: "item-001", qtySent: 10, qtyReceived: 8 }])
         // outlet-1: 100-8=92, outlet-2: 20+8=28
-        const proposed = { ...acceptance.versions[0].snapshot, items: [{ productId: "item-001", qtySent: 10, qtyReceived: 9 }] }
+        const proposed = { ...acceptance.versions[0].snapshot, items: [{ itemId: "item-001", qtySent: 10, qtyReceived: 9 }] }
         submitAcceptanceRepairRequest(acceptance.id, proposed)
         approveAcceptanceRepairRequest(acceptance.id)
         // delta = +1: receiver +1, sender -1
-        expect(mockOutletStock["outlet-1"]["item-001"]).toBe(91) // 92 - 1
-        expect(mockOutletStock["outlet-2"]["item-001"]).toBe(29) // 28 + 1
+        expect(mockOutletStock["item-001_outlet-1"].stock).toBe(91) // 92 - 1
+        expect(mockOutletStock["item-001_outlet-2"].stock).toBe(29) // 28 + 1
         expect(acceptance.currentVersionIndex).toBe(2)
         expect(acceptance.pendingRequest).toBeNull()
     })
 
     it("approveAcceptanceRepairRequest does NOT adjust sender stock when returnable=false", () => {
-        const record = createTransfer({ tanggal: "2020-01-01", destinations: [{ outletId: "outlet-2", items: [{ productId: "item-001", qty: 10 }] }], keterangan: "", returnable: false })
-        const acceptance = acceptTransfer(record.id, "outlet-2", [{ productId: "item-001", qtySent: 10, qtyReceived: 6 }])
+        const record = createTransfer({ tanggal: "2020-01-01", destinations: [{ outletId: "outlet-2", items: [{ itemId: "item-001", qty: 10 }] }], keterangan: "", returnable: false })
+        const acceptance = acceptTransfer(record.id, "outlet-2", [{ itemId: "item-001", qtySent: 10, qtyReceived: 6 }])
         // sender: 100-6-4=90, receiver: 20+6=26
-        const senderBefore = mockOutletStock["outlet-1"]["item-001"]
-        const proposed = { ...acceptance.versions[0].snapshot, items: [{ productId: "item-001", qtySent: 10, qtyReceived: 7 }] }
+        const senderBefore = mockOutletStock["item-001_outlet-1"].stock
+        const proposed = { ...acceptance.versions[0].snapshot, items: [{ itemId: "item-001", qtySent: 10, qtyReceived: 7 }] }
         submitAcceptanceRepairRequest(acceptance.id, proposed)
         approveAcceptanceRepairRequest(acceptance.id)
         // delta = +1: receiver +1, sender unchanged
-        expect(mockOutletStock["outlet-1"]["item-001"]).toBe(senderBefore) // 90 unchanged
-        expect(mockOutletStock["outlet-2"]["item-001"]).toBe(27)
+        expect(mockOutletStock["item-001_outlet-1"].stock).toBe(senderBefore) // 90 unchanged
+        expect(mockOutletStock["item-001_outlet-2"].stock).toBe(27)
     })
 
     it("rejectAcceptanceRepairRequest sets rejected status and stores reason", () => {
-        const record = createTransfer({ tanggal: "2020-01-01", destinations: [{ outletId: "outlet-2", items: [{ productId: "item-001", qty: 5 }] }], keterangan: "", returnable: true })
-        const acceptance = acceptTransfer(record.id, "outlet-2", [{ productId: "item-001", qtySent: 5, qtyReceived: 5 }])
+        const record = createTransfer({ tanggal: "2020-01-01", destinations: [{ outletId: "outlet-2", items: [{ itemId: "item-001", qty: 5 }] }], keterangan: "", returnable: true })
+        const acceptance = acceptTransfer(record.id, "outlet-2", [{ itemId: "item-001", qtySent: 5, qtyReceived: 5 }])
         submitAcceptanceRepairRequest(acceptance.id, { ...acceptance.versions[0].snapshot })
         rejectAcceptanceRepairRequest(acceptance.id, "Qty salah")
         expect(acceptance.pendingRequest!.status).toBe("rejected")
@@ -1073,8 +1071,8 @@ describe("Acceptance PT admin actions", () => {
     })
 
     it("deleteAcceptanceRecord sets isDeleted and clears pendingRequest", () => {
-        const record = createTransfer({ tanggal: "2020-01-01", destinations: [{ outletId: "outlet-2", items: [{ productId: "item-001", qty: 5 }] }], keterangan: "", returnable: true })
-        const acceptance = acceptTransfer(record.id, "outlet-2", [{ productId: "item-001", qtySent: 5, qtyReceived: 5 }])
+        const record = createTransfer({ tanggal: "2020-01-01", destinations: [{ outletId: "outlet-2", items: [{ itemId: "item-001", qty: 5 }] }], keterangan: "", returnable: true })
+        const acceptance = acceptTransfer(record.id, "outlet-2", [{ itemId: "item-001", qtySent: 5, qtyReceived: 5 }])
         submitAcceptanceRepairRequest(acceptance.id, { ...acceptance.versions[0].snapshot })
         deleteAcceptanceRecord(acceptance.id)
         expect(acceptance.isDeleted).toBe(true)
@@ -1086,10 +1084,10 @@ describe("getMovementsForTransfer", () => {
     beforeEach(resetMocks)
 
     it("returns only movements for the given transferId", () => {
-        const r1 = createTransfer({ tanggal: "2020-01-01", destinations: [{ outletId: "outlet-2", items: [{ productId: "item-001", qty: 3 }] }], keterangan: "", returnable: true })
-        const r2 = createTransfer({ tanggal: "2020-01-01", destinations: [{ outletId: "outlet-2", items: [{ productId: "item-002", qty: 2 }] }], keterangan: "", returnable: true })
-        acceptTransfer(r1.id, "outlet-2", [{ productId: "item-001", qtySent: 3, qtyReceived: 3 }])
-        acceptTransfer(r2.id, "outlet-2", [{ productId: "item-002", qtySent: 2, qtyReceived: 2 }])
+        const r1 = createTransfer({ tanggal: "2020-01-01", destinations: [{ outletId: "outlet-2", items: [{ itemId: "item-001", qty: 3 }] }], keterangan: "", returnable: true })
+        const r2 = createTransfer({ tanggal: "2020-01-01", destinations: [{ outletId: "outlet-2", items: [{ itemId: "item-002", qty: 2 }] }], keterangan: "", returnable: true })
+        acceptTransfer(r1.id, "outlet-2", [{ itemId: "item-001", qtySent: 3, qtyReceived: 3 }])
+        acceptTransfer(r2.id, "outlet-2", [{ itemId: "item-002", qtySent: 2, qtyReceived: 2 }])
         const movements = getMovementsForTransfer(r1.id)
         expect(movements.every(m => m.transferId === r1.id)).toBe(true)
         expect(movements.length).toBeGreaterThan(0)
@@ -1143,18 +1141,15 @@ export function approveAcceptanceRepairRequest(acceptanceId: string): void {
     const { returnable, fromOutletId } = transferSnap
     const now = new Date().toISOString()
 
-    if (!mockOutletStock[fromOutletId]) mockOutletStock[fromOutletId] = {}
-    if (!mockOutletStock[current.receivingOutletId]) mockOutletStock[current.receivingOutletId] = {}
-
     for (const proposed of req.proposedSnapshot.items) {
-        const original = current.items.find(i => i.productId === proposed.productId)
+        const original = current.items.find(i => i.itemId === proposed.itemId)
         const delta = proposed.qtyReceived - (original?.qtyReceived ?? 0)
         if (delta !== 0) {
-            mockOutletStock[current.receivingOutletId][proposed.productId] = (mockOutletStock[current.receivingOutletId][proposed.productId] ?? 0) + delta
+            logStockMovement({ itemId: proposed.itemId, outletId: current.receivingOutletId, delta, source: "transfer_in", sourceId: acceptanceId })
             if (returnable) {
-                mockOutletStock[fromOutletId][proposed.productId] = (mockOutletStock[fromOutletId][proposed.productId] ?? 0) - delta
+                logStockMovement({ itemId: proposed.itemId, outletId: fromOutletId, delta: -delta, source: "transfer_out", sourceId: acceptanceId })
             }
-            mockStockMovements.push({ id: uuid(), transferId: current.transferId, acceptanceId, productId: proposed.productId, fromOutletId: delta > 0 ? fromOutletId : current.receivingOutletId, toOutletId: delta > 0 ? current.receivingOutletId : fromOutletId, qty: Math.abs(delta), type: "transfer", createdAt: now })
+            mockStockMovements.push({ id: uuid(), transferId: current.transferId, acceptanceId, itemId: proposed.itemId, fromOutletId: delta > 0 ? fromOutletId : current.receivingOutletId, toOutletId: delta > 0 ? current.receivingOutletId : fromOutletId, qty: Math.abs(delta), type: "transfer", createdAt: now })
         }
     }
 
@@ -1177,7 +1172,7 @@ export function deleteAcceptanceRecord(acceptanceId: string): void {
     acceptance.pendingRequest = null
 }
 
-export function getMovementsForTransfer(transferId: string): StockMovement[] {
+export function getMovementsForTransfer(transferId: string): TransferMovementLog[] {
     return mockStockMovements.filter(m => m.transferId === transferId)
 }
 ```
@@ -1195,12 +1190,12 @@ Expected: PASS (all tests)
 ```typescript
 // src/library/stores/transfer.ts
 import { writable } from "svelte/store"
-import type { TransferRecord, TransferAcceptance, StockMovement } from "$lib/types/Transfer"
+import type { TransferRecord, TransferAcceptance, TransferMovementLog } from "$lib/types/Transfer"
 import { mockTransferRecords, mockTransferAcceptances, mockStockMovements } from "$lib/mock/transfer"
 
 export const transferRecords = writable<TransferRecord[]>([...mockTransferRecords])
 export const transferAcceptances = writable<TransferAcceptance[]>([...mockTransferAcceptances])
-export const stockMovements = writable<StockMovement[]>([...mockStockMovements])
+export const stockMovements = writable<TransferMovementLog[]>([...mockStockMovements])
 
 export function refreshTransfer(): void {
     transferRecords.set([...mockTransferRecords])
@@ -1244,13 +1239,13 @@ git commit -m "feat(transfer): admin PT actions, stock reconciliation, movement 
     let keterangan = ""
     let returnable = true
 
-    type DestinationDraft = { outletId: string; items: Array<{ productId: string; qty: number }> }
-    let destinations: DestinationDraft[] = [{ outletId: "", items: [{ productId: "", qty: 1 }] }]
+    type DestinationDraft = { outletId: string; items: Array<{ itemId: string; qty: number }> }
+    let destinations: DestinationDraft[] = [{ outletId: "", items: [{ itemId: "", qty: 1 }] }]
 
     $: otherOutlets = mockOutlets.filter(o => o.id !== $auth.outletId)
 
     function addDestination() {
-        destinations = [...destinations, { outletId: "", items: [{ productId: "", qty: 1 }] }]
+        destinations = [...destinations, { outletId: "", items: [{ itemId: "", qty: 1 }] }]
     }
 
     function removeDestination(i: number) {
@@ -1258,7 +1253,7 @@ git commit -m "feat(transfer): admin PT actions, stock reconciliation, movement 
     }
 
     function addItem(destIdx: number) {
-        destinations[destIdx].items = [...destinations[destIdx].items, { productId: "", qty: 1 }]
+        destinations[destIdx].items = [...destinations[destIdx].items, { itemId: "", qty: 1 }]
         destinations = [...destinations]
     }
 
@@ -1272,7 +1267,7 @@ git commit -m "feat(transfer): admin PT actions, stock reconciliation, movement 
     function save() {
         createTransfer({
             tanggal,
-            destinations: destinations.map(d => ({ outletId: d.outletId, items: d.items.map(i => ({ productId: i.productId, qty: i.qty })) })),
+            destinations: destinations.map(d => ({ outletId: d.outletId, items: d.items.map(i => ({ itemId: i.itemId, qty: i.qty })) })),
             keterangan,
             returnable,
         })
@@ -1322,7 +1317,7 @@ git commit -m "feat(transfer): admin PT actions, stock reconciliation, movement 
                     <div class="flex gap-2 mb-2 items-end">
                         <div class="form-control flex-1">
                             <label class="label"><span class="label-text">Produk (SKU)</span></label>
-                            <input type="text" class="input input-bordered" placeholder="ID produk" bind:value={item.productId} />
+                            <input type="text" class="input input-bordered" placeholder="ID produk" bind:value={item.itemId} />
                         </div>
                         <div class="form-control w-24">
                             <label class="label"><span class="label-text">Qty</span></label>
@@ -1598,7 +1593,7 @@ git commit -m "feat(transfer): TransferForm and main page Dikirim tab"
     $: outletName = (id: string) => mockOutlets.find(o => o.id === id)?.name ?? id
 
     // Build editable items list from destination
-    let items: AcceptedItem[] = (destination?.items ?? []).map(i => ({ productId: i.productId, qtySent: i.qty, qtyReceived: i.qty }))
+    let items: AcceptedItem[] = (destination?.items ?? []).map(i => ({ itemId: i.itemId, qtySent: i.qty, qtyReceived: i.qty }))
 
     // If viewing existing acceptance, use its snapshot items
     $: if (acceptance && acceptance.currentVersionIndex > 0) {
@@ -1645,7 +1640,7 @@ git commit -m "feat(transfer): TransferForm and main page Dikirim tab"
             <tbody>
                 {#each items as item}
                     <tr>
-                        <td class="font-mono text-sm">{item.productId}</td>
+                        <td class="font-mono text-sm">{item.itemId}</td>
                         <td>{item.qtySent}</td>
                         <td>
                             {#if readonly}
@@ -1724,7 +1719,7 @@ let logProductFilter = ""
 
 $: filteredMovements = $stockMovements.filter(m => {
     if (m.createdAt.slice(0, 10) < logFrom || m.createdAt.slice(0, 10) > logTo) return false
-    if (logProductFilter && !m.productId.includes(logProductFilter)) return false
+    if (logProductFilter && !m.itemId.includes(logProductFilter)) return false
     return true
 })
 ```
@@ -1836,7 +1831,7 @@ Replace the Log placeholder:
                     <tr>
                         <td>{mov.createdAt.slice(0, 10)}</td>
                         <td class="font-mono text-sm">{mov.transferId}</td>
-                        <td class="font-mono text-sm">{mov.productId}</td>
+                        <td class="font-mono text-sm">{mov.itemId}</td>
                         <td>{outletName(mov.fromOutletId)}</td>
                         <td>{outletName(mov.toOutletId)}</td>
                         <td>{mov.qty}</td>
@@ -2008,7 +2003,7 @@ git commit -m "feat(transfer): TransferAcceptModal, Diterima tab, and movement l
                     <div class="text-sm font-semibold mb-1">Tujuan: {outletName(dest.outletId)}</div>
                     {#each dest.items as item}
                         <div class="flex gap-2 items-center mb-1 text-sm">
-                            <span class="font-mono">{item.productId}</span>
+                            <span class="font-mono">{item.itemId}</span>
                             <input type="number" class="input input-bordered input-xs w-20" min="1" bind:value={item.qty} />
                         </div>
                     {/each}
@@ -2022,7 +2017,7 @@ git commit -m "feat(transfer): TransferAcceptModal, Diterima tab, and movement l
                 <tbody>
                     {#each acceptanceDraft.items as item}
                         <tr>
-                            <td class="font-mono text-sm">{item.productId}</td>
+                            <td class="font-mono text-sm">{item.itemId}</td>
                             <td>{item.qtySent}</td>
                             <td><input type="number" class="input input-bordered input-xs w-20" min="0" max={item.qtySent} bind:value={item.qtyReceived} /></td>
                         </tr>

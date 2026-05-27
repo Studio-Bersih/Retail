@@ -9,6 +9,8 @@
 **Tech Stack:** SvelteKit · TypeScript · TailwindCSS · DaisyUI · Svelte Stores · Mock data layer (offline dev — all hooks hit mock arrays; swap for real API endpoints when backend is ready)
 
 > **Note:** This project configures `$lib` to resolve to `src/library/`. Ensure `svelte.config.js` includes `kit: { alias: { $lib: 'src/library' } }`.
+>
+> **Master Item prerequisite:** `src/library/mock/master-items.ts` must export `logStockMovement(entry: { itemId: string; outletId: string; delta: number; source: StockMovementSource; sourceId: string }): void`. `TransactionSnapshot.outletId` is used as the outlet reference for stock reconciliation on PT approval. These are built in the Master Item plan.
 
 ---
 
@@ -58,23 +60,20 @@ If a PTI edit is made after a PT request is submitted (both affect overlapping l
 
 export interface TransactionSnapshot {
   id: string
-  items: Array<{ id: string; qty: number; price: number; isFree: boolean }>
-  pricing: {
-    subtotal: number
-    percentDiscount: number
-    fixedDiscount: number
-    additionalCost: { packaging: number; transport: number; modification: number }
-    total: number
-  }
-  paymentMethods: Array<{ method: string; amount: number }>
-  notes: string
-  mode: "retail" | "order"
+  outletId: string
   memberId: string | null
-  keterangan: string
-  tanggalKirim: string        // "YYYY-MM-DD"
-  jamKirimPesanan: string     // "HH:MM"
-  statusPesanan: "Dikirim" | "Diambil"
-  kontakWhatsApp: string
+  pointsRedeemed: number
+  voucherId: string | null
+  items: Array<{ id: string; name: string; sku: string; barcode: string; price: number; qty: number; stock: number; isFree: boolean }>
+  freeItems: Array<{ id: string; name: string; sku: string; barcode: string; qty: number; stock: number; isFree: true }>
+  additionalCosts: { packaging: number; modification: number; transport: number; other: number }
+  additionalCut: { fixedAmount: number; percentage: number }
+  payments: Array<{ type: string; amount: number }>
+  isPiutang: boolean
+  piutangAmount: number
+  transactionType: string
+  notes: string
+  orderMeta: { orderDate: string; whatsapp: string; branchId: string; hour: string; deliveryType: "pickup" | "delivery" } | null
 }
 
 export interface Version {
@@ -106,14 +105,12 @@ export interface VersionedTransaction {
   isDeleted: boolean
 }
 
-export type PTIField = "keterangan" | "tanggalKirim" | "jamKirimPesanan" | "statusPesanan" | "kontakWhatsApp"
+export type PTIField = "notes" | "transactionType" | "orderMeta"
 
 export const PTI_ALLOWED_FIELDS: readonly PTIField[] = [
-  "keterangan",
-  "tanggalKirim",
-  "jamKirimPesanan",
-  "statusPesanan",
-  "kontakWhatsApp"
+  "notes",
+  "transactionType",
+  "orderMeta"
 ] as const
 ```
 
@@ -121,10 +118,8 @@ export const PTI_ALLOWED_FIELDS: readonly PTIField[] = [
 
 ```typescript
 // src/library/utils/repairDiff.ts
-import type { TransactionSnapshot } from "$lib/types/Repair"
-
-function getChangedFields(original: TransactionSnapshot, proposed: TransactionSnapshot): string[] {
-  return (Object.keys(proposed) as Array<keyof TransactionSnapshot>).filter(
+function getChangedFields(original: Record<string, unknown>, proposed: Record<string, unknown>): string[] {
+  return Object.keys(proposed).filter(
     key => JSON.stringify(original[key]) !== JSON.stringify(proposed[key])
   )
 }
@@ -138,25 +133,13 @@ export { getChangedFields }
 // src/library/utils/repairDiff.test.ts
 import { describe, it, expect } from "vitest"
 import { getChangedFields } from "./repairDiff"
-import type { TransactionSnapshot } from "$lib/types/Repair"
 
-const base: TransactionSnapshot = {
+const base: Record<string, unknown> = {
   id: "TRX-TEST",
+  notes: "Pesanan awal",
+  transactionType: "Private Event",
   items: [{ id: "SKU-001", qty: 2, price: 50000, isFree: false }],
-  pricing: {
-    subtotal: 100000, percentDiscount: 0, fixedDiscount: 0,
-    additionalCost: { packaging: 0, transport: 0, modification: 0 },
-    total: 100000
-  },
-  paymentMethods: [{ method: "Tunai", amount: 100000 }],
-  notes: "",
-  mode: "order",
-  memberId: null,
-  keterangan: "Pesanan awal",
-  tanggalKirim: "2026-05-03",
-  jamKirimPesanan: "10:00",
-  statusPesanan: "Dikirim",
-  kontakWhatsApp: "08123456789"
+  orderMeta: null
 }
 
 describe("getChangedFields", () => {
@@ -165,16 +148,16 @@ describe("getChangedFields", () => {
   })
 
   it("detects a single changed scalar field", () => {
-    const proposed = { ...base, statusPesanan: "Diambil" as const }
+    const proposed = { ...base, transactionType: "Walk-In" }
     const changed = getChangedFields(base, proposed)
-    expect(changed).toContain("statusPesanan")
+    expect(changed).toContain("transactionType")
     expect(changed).toHaveLength(1)
   })
 
   it("detects multiple changed fields", () => {
-    const proposed = { ...base, keterangan: "Diubah", tanggalKirim: "2026-05-10" }
+    const proposed = { ...base, notes: "Diubah", transactionType: "Online" }
     expect(getChangedFields(base, proposed)).toEqual(
-      expect.arrayContaining(["keterangan", "tanggalKirim"])
+      expect.arrayContaining(["notes", "transactionType"])
     )
   })
 
@@ -207,21 +190,20 @@ import type { VersionedTransaction, TransactionSnapshot } from "$lib/types/Repai
 
 const base: TransactionSnapshot = {
   id: "",
-  items: [{ id: "SKU-001", qty: 2, price: 50000, isFree: false }],
-  pricing: {
-    subtotal: 100000, percentDiscount: 0, fixedDiscount: 0,
-    additionalCost: { packaging: 5000, transport: 10000, modification: 0 },
-    total: 115000
-  },
-  paymentMethods: [{ method: "Tunai", amount: 115000 }],
-  notes: "",
-  mode: "order",
+  outletId: "outlet-1",
   memberId: null,
-  keterangan: "Pesanan reguler",
-  tanggalKirim: "2026-05-03",
-  jamKirimPesanan: "10:00",
-  statusPesanan: "Dikirim",
-  kontakWhatsApp: "08123456789"
+  pointsRedeemed: 0,
+  voucherId: null,
+  items: [{ id: "SKU-001", name: "Krim Wajah SPF50", sku: "SKU-001", barcode: "8991234000012", price: 50000, qty: 2, stock: 10, isFree: false }],
+  freeItems: [],
+  additionalCosts: { packaging: 5000, transport: 10000, modification: 0, other: 0 },
+  additionalCut: { fixedAmount: 0, percentage: 0 },
+  payments: [{ type: "cash", amount: 115000 }],
+  isPiutang: false,
+  piutangAmount: 0,
+  transactionType: "Private Event",
+  notes: "Pesanan reguler",
+  orderMeta: { orderDate: "2026-05-03", whatsapp: "08123456789", branchId: "outlet-1", hour: "10:00", deliveryType: "delivery" }
 }
 
 export const mockVersionedTransactions: VersionedTransaction[] = [
@@ -238,8 +220,8 @@ export const mockVersionedTransactions: VersionedTransaction[] = [
       },
       {
         index: 2, type: "instant",
-        snapshot: { ...base, id: "TRX-001", statusPesanan: "Diambil" },
-        changedFields: ["statusPesanan"], createdBy: "cashier-01",
+        snapshot: { ...base, id: "TRX-001", transactionType: "Walk-In" },
+        changedFields: ["transactionType"], createdBy: "cashier-01",
         createdAt: "2026-05-02T09:00:00Z", requestId: null
       }
     ],
@@ -255,8 +237,8 @@ export const mockVersionedTransactions: VersionedTransaction[] = [
         index: 1, type: "original",
         snapshot: {
           ...base, id: "TRX-002",
-          items: [{ id: "SKU-002", qty: 1, price: 75000, isFree: false }],
-          pricing: { subtotal: 75000, percentDiscount: 0, fixedDiscount: 0, additionalCost: { packaging: 0, transport: 0, modification: 0 }, total: 75000 }
+          items: [{ id: "SKU-002", name: "Serum Vitamin C", sku: "SKU-002", barcode: "8991234000099", price: 75000, qty: 1, stock: 8, isFree: false }],
+          additionalCosts: { packaging: 0, modification: 0, transport: 0, other: 0 }
         },
         changedFields: [], createdBy: "cashier-02",
         createdAt: "2026-05-01T10:00:00Z", requestId: null
@@ -266,8 +248,8 @@ export const mockVersionedTransactions: VersionedTransaction[] = [
       id: "REQ-001", transactionId: "TRX-002", status: "pending",
       proposedSnapshot: {
         ...base, id: "TRX-002",
-        items: [{ id: "SKU-002", qty: 2, price: 75000, isFree: false }],
-        pricing: { subtotal: 150000, percentDiscount: 0, fixedDiscount: 0, additionalCost: { packaging: 0, transport: 0, modification: 0 }, total: 150000 }
+        items: [{ id: "SKU-002", name: "Serum Vitamin C", sku: "SKU-002", barcode: "8991234000099", price: 75000, qty: 2, stock: 8, isFree: false }],
+        additionalCosts: { packaging: 0, modification: 0, transport: 0, other: 0 }
       },
       submittedBy: "cashier-02", submittedAt: "2026-05-02T11:00:00Z",
       rejectionReason: null, revisions: 0
@@ -281,14 +263,14 @@ export const mockVersionedTransactions: VersionedTransaction[] = [
     versions: [
       {
         index: 1, type: "original",
-        snapshot: { ...base, id: "TRX-003", keterangan: "Pesanan express" },
+        snapshot: { ...base, id: "TRX-003", notes: "Pesanan express" },
         changedFields: [], createdBy: "cashier-01",
         createdAt: "2026-05-01T12:00:00Z", requestId: null
       }
     ],
     pendingRequest: {
       id: "REQ-002", transactionId: "TRX-003", status: "rejected",
-      proposedSnapshot: { ...base, id: "TRX-003", keterangan: "Pesanan express — direvisi" },
+      proposedSnapshot: { ...base, id: "TRX-003", notes: "Pesanan express — direvisi" },
       submittedBy: "cashier-01", submittedAt: "2026-05-01T14:00:00Z",
       rejectionReason: "Keterangan tidak sesuai standar penulisan", revisions: 0
     },
@@ -405,15 +387,16 @@ git commit -m "feat: add Perbaikan Transaksi types, diff utility, and mock data"
 
   const FIELD_LABELS: Partial<Record<keyof TransactionSnapshot, string>> = {
     items: "Item / Qty",
-    paymentMethods: "Metode Pembayaran",
-    pricing: "Harga",
-    keterangan: "Keterangan",
-    tanggalKirim: "Tanggal Kirim",
-    jamKirimPesanan: "Jam Kirim",
-    statusPesanan: "Status Pesanan",
-    kontakWhatsApp: "Kontak WhatsApp",
+    freeItems: "Item Gratis",
+    payments: "Metode Pembayaran",
+    additionalCosts: "Biaya Tambahan",
+    additionalCut: "Potongan",
     notes: "Catatan",
-    memberId: "Member"
+    transactionType: "Tipe Transaksi",
+    orderMeta: "Info Order",
+    memberId: "Member",
+    isPiutang: "Piutang",
+    piutangAmount: "Nominal Piutang"
   }
 
   function formatValue(val: unknown): string {
@@ -520,7 +503,7 @@ Add the modal after the transaction list:
 ```bash
 npm run dev
 ```
-Navigate to history page. Click "Lihat Versi" on TRX-001. Expected: timeline shows V1 (Original, purple) and V2 (Instan, green). Click V2 → diff shows `statusPesanan` changed from "Dikirim" to "Diambil".
+Navigate to history page. Click "Lihat Versi" on TRX-001. Expected: timeline shows V1 (Original, purple) and V2 (Instan, green). Click V2 → diff shows `transactionType` changed from "Private Event" to "Walk-In".
 
 - [ ] **Step 2.5: Commit**
 
@@ -580,7 +563,7 @@ async function submitInstantRepair(payload: InstantRepairPayload): Promise<Insta
     index: tx.currentVersionIndex + 1,
     type: "instant" as const,
     snapshot: newSnapshot,
-    changedFields: getChangedFields(currentSnapshot, newSnapshot),
+    changedFields: getChangedFields(currentSnapshot as Record<string, unknown>, newSnapshot as Record<string, unknown>),
     createdBy: $auth.userId,
     createdAt: new Date().toISOString(),
     requestId: null
@@ -613,11 +596,9 @@ export type { InstantRepairPayload, InstantRepairResult }
 
   const current = transaction.versions[transaction.currentVersionIndex - 1].snapshot
 
-  let keterangan = current.keterangan
-  let tanggalKirim = current.tanggalKirim
-  let jamKirimPesanan = current.jamKirimPesanan
-  let statusPesanan: "Dikirim" | "Diambil" = current.statusPesanan
-  let kontakWhatsApp = current.kontakWhatsApp
+  let notes = current.notes
+  let transactionType = current.transactionType
+  let orderMeta = current.orderMeta ? { ...current.orderMeta } : null
   let loading = false
   let error = ""
 
@@ -626,7 +607,7 @@ export type { InstantRepairPayload, InstantRepairResult }
     error = ""
 
     const changes: Partial<Pick<TransactionSnapshot, PTIField>> = {
-      keterangan, tanggalKirim, jamKirimPesanan, statusPesanan, kontakWhatsApp
+      notes, transactionType, orderMeta
     }
 
     const result = await submitInstantRepair({ transactionId: transaction.id, changes })
@@ -652,33 +633,38 @@ export type { InstantRepairPayload, InstantRepairResult }
 
     <div class="flex flex-col gap-3">
       <label class="form-control">
-        <div class="label"><span class="label-text">Keterangan</span></div>
-        <textarea class="textarea textarea-bordered" rows="2" bind:value={keterangan}></textarea>
-      </label>
-
-      <div class="grid grid-cols-2 gap-3">
-        <label class="form-control">
-          <div class="label"><span class="label-text">Tanggal Kirim</span></div>
-          <input type="date" class="input input-bordered" bind:value={tanggalKirim} />
-        </label>
-        <label class="form-control">
-          <div class="label"><span class="label-text">Jam Kirim</span></div>
-          <input type="time" class="input input-bordered" bind:value={jamKirimPesanan} />
-        </label>
-      </div>
-
-      <label class="form-control">
-        <div class="label"><span class="label-text">Status Pesanan</span></div>
-        <select class="select select-bordered" bind:value={statusPesanan}>
-          <option value="Dikirim">Dikirim</option>
-          <option value="Diambil">Diambil</option>
-        </select>
+        <div class="label"><span class="label-text">Catatan</span></div>
+        <textarea class="textarea textarea-bordered" rows="2" bind:value={notes}></textarea>
       </label>
 
       <label class="form-control">
-        <div class="label"><span class="label-text">Kontak WhatsApp</span></div>
-        <input type="tel" class="input input-bordered" bind:value={kontakWhatsApp} placeholder="08xxxxxxxxxx" />
+        <div class="label"><span class="label-text">Tipe Transaksi</span></div>
+        <input type="text" class="input input-bordered" bind:value={transactionType} placeholder="Private Event, Walk-In, Online..." />
       </label>
+
+      {#if orderMeta}
+        <div class="grid grid-cols-2 gap-3">
+          <label class="form-control">
+            <div class="label"><span class="label-text">Tanggal Order</span></div>
+            <input type="date" class="input input-bordered" bind:value={orderMeta.orderDate} />
+          </label>
+          <label class="form-control">
+            <div class="label"><span class="label-text">Jam</span></div>
+            <input type="time" class="input input-bordered" bind:value={orderMeta.hour} />
+          </label>
+        </div>
+        <label class="form-control">
+          <div class="label"><span class="label-text">Tipe Pengiriman</span></div>
+          <select class="select select-bordered" bind:value={orderMeta.deliveryType}>
+            <option value="delivery">Delivery</option>
+            <option value="pickup">Pickup</option>
+          </select>
+        </label>
+        <label class="form-control">
+          <div class="label"><span class="label-text">Kontak WhatsApp</span></div>
+          <input type="tel" class="input input-bordered" bind:value={orderMeta.whatsapp} placeholder="08xxxxxxxxxx" />
+        </label>
+      {/if}
     </div>
 
     <div class="modal-action">
@@ -741,7 +727,7 @@ Add modal after the list:
 ```bash
 npm run dev
 ```
-Click "Perbaikan Instan" on TRX-001. Change `statusPesanan` to "Diambil". Click Simpan. Open "Lihat Versi" — expect a new V3 of type "instant" with `changedFields: ["statusPesanan"]`.
+Click "Perbaikan Instan" on TRX-001. Change `transactionType` to "Walk-In". Click Simpan. Open "Lihat Versi" — expect a new V3 of type "instant" with `changedFields: ["transactionType"]`.
 
 - [ ] **Step 3.5: Commit**
 
@@ -780,6 +766,7 @@ export { activeRepairTransaction }
 import { get } from "svelte/store"
 import { auth } from "$lib/stores/auth"
 import { getChangedFields } from "$lib/utils/repairDiff"
+import { logStockMovement } from "$lib/mock/master-items"
 import type { RepairRequest, TransactionSnapshot, VersionedTransaction } from "$lib/types/Repair"
 import { mockVersionedTransactions } from "$lib/mock/versions"
 import { mockRepairRequests } from "$lib/mock/repair-requests"
@@ -865,15 +852,15 @@ export { submitRepairRequest, reviseRepairRequest, deleteRepairRequest }
 
   // Editable state — mirrors TransactionSnapshot fields
   let items = JSON.parse(JSON.stringify(prefill.items)) as TransactionSnapshot["items"]
-  let keterangan = prefill.keterangan
-  let tanggalKirim = prefill.tanggalKirim
-  let jamKirimPesanan = prefill.jamKirimPesanan
-  let statusPesanan: "Dikirim" | "Diambil" = prefill.statusPesanan
-  let kontakWhatsApp = prefill.kontakWhatsApp
   let notes = prefill.notes
+  let transactionType = prefill.transactionType
   let memberId = prefill.memberId
-  let paymentMethods = JSON.parse(JSON.stringify(prefill.paymentMethods)) as TransactionSnapshot["paymentMethods"]
-  let pricing = JSON.parse(JSON.stringify(prefill.pricing)) as TransactionSnapshot["pricing"]
+  let payments = JSON.parse(JSON.stringify(prefill.payments)) as TransactionSnapshot["payments"]
+  let additionalCosts = { ...prefill.additionalCosts }
+  let additionalCut = { ...prefill.additionalCut }
+  let isPiutang = prefill.isPiutang
+  let piutangAmount = prefill.piutangAmount
+  let orderMeta = prefill.orderMeta ? { ...prefill.orderMeta } : null
 
   let loading = false
   let error = ""
@@ -882,8 +869,8 @@ export { submitRepairRequest, reviseRepairRequest, deleteRepairRequest }
   function buildProposed(): TransactionSnapshot {
     return {
       ...current,
-      items, keterangan, tanggalKirim, jamKirimPesanan,
-      statusPesanan, kontakWhatsApp, notes, memberId, paymentMethods, pricing
+      items, notes, transactionType, memberId, payments,
+      additionalCosts, additionalCut, isPiutang, piutangAmount, orderMeta
     }
   }
 
@@ -956,51 +943,50 @@ export { submitRepairRequest, reviseRepairRequest, deleteRepairRequest }
       <!-- Payment -->
       <div>
         <div class="label"><span class="label-text font-semibold">Metode Pembayaran</span></div>
-        {#each paymentMethods as pm}
+        {#each payments as pm}
           <div class="flex gap-2 mb-2">
-            <select class="select select-bordered select-sm flex-1" bind:value={pm.method}>
-              <option>Tunai</option>
-              <option>QRIS</option>
-            </select>
+            <input class="input input-bordered input-sm flex-1" bind:value={pm.type} placeholder="cash / emoney" />
             <input class="input input-bordered input-sm w-36" type="number" min="0" bind:value={pm.amount} />
           </div>
         {/each}
       </div>
 
-      <!-- Logistical fields -->
-      <div class="grid grid-cols-2 gap-3">
-        <label class="form-control">
-          <div class="label"><span class="label-text">Tanggal Kirim</span></div>
-          <input type="date" class="input input-bordered" bind:value={tanggalKirim} />
-        </label>
-        <label class="form-control">
-          <div class="label"><span class="label-text">Jam Kirim</span></div>
-          <input type="time" class="input input-bordered" bind:value={jamKirimPesanan} />
-        </label>
-      </div>
-
+      <!-- Tipe Transaksi -->
       <label class="form-control">
-        <div class="label"><span class="label-text">Status Pesanan</span></div>
-        <select class="select select-bordered" bind:value={statusPesanan}>
-          <option value="Dikirim">Dikirim</option>
-          <option value="Diambil">Diambil</option>
-        </select>
+        <div class="label"><span class="label-text">Tipe Transaksi</span></div>
+        <input type="text" class="input input-bordered" bind:value={transactionType} />
       </label>
 
-      <label class="form-control">
-        <div class="label"><span class="label-text">Keterangan</span></div>
-        <textarea class="textarea textarea-bordered" rows="2" bind:value={keterangan}></textarea>
-      </label>
-
-      <label class="form-control">
-        <div class="label"><span class="label-text">Kontak WhatsApp</span></div>
-        <input type="tel" class="input input-bordered" bind:value={kontakWhatsApp} />
-      </label>
-
+      <!-- Catatan -->
       <label class="form-control">
         <div class="label"><span class="label-text">Catatan</span></div>
         <textarea class="textarea textarea-bordered" rows="2" bind:value={notes}></textarea>
       </label>
+
+      <!-- Order meta (only shown in order mode) -->
+      {#if orderMeta}
+        <div class="grid grid-cols-2 gap-3">
+          <label class="form-control">
+            <div class="label"><span class="label-text">Tanggal Order</span></div>
+            <input type="date" class="input input-bordered" bind:value={orderMeta.orderDate} />
+          </label>
+          <label class="form-control">
+            <div class="label"><span class="label-text">Jam</span></div>
+            <input type="time" class="input input-bordered" bind:value={orderMeta.hour} />
+          </label>
+        </div>
+        <label class="form-control">
+          <div class="label"><span class="label-text">Tipe Pengiriman</span></div>
+          <select class="select select-bordered" bind:value={orderMeta.deliveryType}>
+            <option value="delivery">Delivery</option>
+            <option value="pickup">Pickup</option>
+          </select>
+        </label>
+        <label class="form-control">
+          <div class="label"><span class="label-text">Kontak WhatsApp</span></div>
+          <input type="tel" class="input input-bordered" bind:value={orderMeta.whatsapp} />
+        </label>
+      {/if}
     </div>
 
     <div class="modal-action flex justify-between">
@@ -1306,11 +1292,26 @@ async function approveRepairRequest(transactionId: string): Promise<{ success: b
   const req = tx.pendingRequest
   const currentSnapshot = tx.versions[tx.currentVersionIndex - 1].snapshot
 
+  // Reconcile stock: apply delta for any item qty changes
+  for (const proposedItem of req.proposedSnapshot.items) {
+    const originalItem = currentSnapshot.items.find(i => i.id === proposedItem.id)
+    const delta = proposedItem.qty - (originalItem?.qty ?? 0)
+    if (delta !== 0) {
+      logStockMovement({
+        itemId: proposedItem.id,
+        outletId: currentSnapshot.outletId,
+        delta: -delta,       // positive delta = more sold = more stock removed = negative movement
+        source: delta > 0 ? "sale" : "sale_void",
+        sourceId: req.id
+      })
+    }
+  }
+
   const newVersion = {
     index: tx.currentVersionIndex + 1,
     type: "approved" as const,
     snapshot: req.proposedSnapshot,
-    changedFields: getChangedFields(currentSnapshot, req.proposedSnapshot),
+    changedFields: getChangedFields(currentSnapshot as Record<string, unknown>, req.proposedSnapshot as Record<string, unknown>),
     createdBy: $auth.userId,
     createdAt: new Date().toISOString(),
     requestId: req.id
@@ -1463,7 +1464,7 @@ Manual test sequence:
 
 1. Submit a PT request on TRX-001 (row shows ⏳).
 2. Click "Perbaikan Instan" on TRX-001 — modal opens normally (PTI is NOT blocked by pending PT).
-3. Change `tanggalKirim` → "Simpan" → success.
+3. Change `notes` → "Simpan" → success.
 4. "Lihat Versi" → new version of type "instant" added while PT is still pending.
 
 - [ ] **Step 7.3: Final commit**
