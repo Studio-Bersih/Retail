@@ -76,7 +76,6 @@
     "elysia": "latest",
     "@elysiajs/jwt": "latest",
     "@elysiajs/cors": "latest",
-    "@elysiajs/rate-limit": "latest",
     "drizzle-orm": "latest",
     "postgres": "latest",
     "ioredis": "latest"
@@ -842,16 +841,29 @@ export const loggerHook = new Elysia({ name: 'logger' })
 
 - [ ] **Step 4: Create `server/src/hooks/rateLimiter.hook.ts`**
 
+Custom Redis sliding-window implementation — `@elysiajs/rate-limit` does not exist on npm.
+
 ```typescript
 import Elysia from 'elysia'
-import rateLimit from '@elysiajs/rate-limit'
+import { redisClient } from '../utils/cache'
+
+const RATE_LIMIT_MAX        = 10
+const RATE_LIMIT_WINDOW_MS  = 60_000
 
 export const rateLimiterHook = new Elysia({ name: 'rate-limiter' })
-    .use(rateLimit({
-        duration:      60000,
-        max:           10,
-        errorResponse: { message: 'Terlalu banyak percobaan. Tunggu satu menit.' }
-    }))
+    .onBeforeHandle(async ({ request, error }) => {
+        const clientIp     = request.headers.get('x-forwarded-for') ?? 'unknown'
+        const rateLimitKey = `ratelimit:${clientIp}`
+        const requestCount = await redisClient.incr(rateLimitKey)
+
+        if (requestCount === 1) {
+            await redisClient.pexpire(rateLimitKey, RATE_LIMIT_WINDOW_MS)
+        }
+
+        if (requestCount > RATE_LIMIT_MAX) {
+            return error(429, { message: 'Terlalu banyak percobaan. Tunggu satu menit.' })
+        }
+    })
 ```
 
 - [ ] **Step 5: Create `server/src/hooks/idempotency.hook.ts`**
