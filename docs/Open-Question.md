@@ -102,6 +102,20 @@ Format per entry:
 
 ---
 
+## Kasir Harian
+
+### Q13 — computeShiftTotals: Pesanan DP source
+**Status:** Open
+**Raised by:** `2026-05-27-kasir-harian-design.md`
+**Question:** `computeShiftTotals` reads Pesanan DP cash from `mock/pesanan.ts`. DP payments are stored inside `PesananPayment[]` on each `Pesanan` record. The filter must match `cashierId` AND payment date to the `tanggalSetor`. The `PesananPayment` shape must include a `paidAt` date field and a `cashierId` for this to work. Verify the Pesanan mock's payment shape before implementing `computeShiftTotals`.
+
+### Q14 — computeShiftTotals: Kas cashierId filter
+**Status:** Open
+**Raised by:** `2026-05-27-kasir-harian-design.md`
+**Question:** `computeShiftTotals` filters Kas Masuk/Keluar by `createdBy === cashierId`. The Akuntansi spec stores `createdBy` on `KasSnapshot`. Confirm this field is accessible on the current mock before the Kasir plan is executed.
+
+---
+
 ## General
 
 ### Q11 — Vitest setup
