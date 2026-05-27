@@ -93,6 +93,15 @@ Format per entry:
 
 ---
 
+## Riwayat Transaksi
+
+### Q12 — `sale_void` StockMovementSource value
+**Status:** Open
+**Raised by:** `2026-05-27-riwayat-transaksi.md` (Task 2, approveRepairRequest)
+**Question:** `approveRepairRequest` calls `logStockMovement` with `source: 'sale_void'` when a PT approval reduces item qty (returning stock). Is `'sale_void'` a valid value in the `StockMovementSource` union defined in `mock/stock-movements.ts`? If not, the approval function will fail type-check. Verify when stock-movements mock is implemented.
+
+---
+
 ## General
 
 ### Q11 — Vitest setup
