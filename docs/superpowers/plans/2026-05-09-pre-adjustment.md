@@ -2,15 +2,15 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Build the Stock Pre-Adjustment system — a virtual stock overlay letting any staff member temporarily unblock sales for items that physically exist but haven't been recorded yet, with an admin Adjustment dashboard for cross-outlet audit, force-close, and automatic reconciliation tracking against subsequent Item Masuk submissions.
+**Goal:** Build the Stock Pre-Adjustment system — a virtual stock overlay letting any staff member temporarily unblock sales for items that physically exist but haven't been recorded yet, with an admin Adjustment dashboard at `/outlet/adjustment/` for cross-outlet audit, force-close, and automatic reconciliation tracking against subsequent Pergerakan Stok (masuk) submissions.
 
-**Architecture:** `StockPreAdjustment` is a separate entity that never touches the real stock ledger. `getDisplayStock(itemId, outletId)` is the universal stock accessor for all cashier-facing UI — it returns `item.stock + sum(delta of all open pre-adjustments for that item/outlet)`. Outlet users create/revert from `/outlet/pre-adjustment/` and via a POS quick-access button. Admins use `/factory/pre-adjustment/` to force-close stale entries and view reconciliation status against Item Masuk submissions.
+**Architecture:** `StockPreAdjustment` records are a virtual overlay — they never touch the real stock ledger. `OutletStock.preAdjDelta` in `mock/master-items.ts` is the materialized sum of open pre-adjustment deltas for each item/outlet pair. Pre-adjustment create/revert/forceClose functions mutate `preAdjDelta` in place by importing `mockOutletStock` from `master-items`. `getDisplayStock(itemId, outletId)` — defined in `mock/master-items.ts` — returns `OutletStock.stock + OutletStock.preAdjDelta` and is the universal stock accessor for all cashier-facing UI. Reconciliation is triggered inside `createStokMasuk()` in `mock/pergerakan-stok.ts` after each masuk stock movement is applied.
 
 **Tech Stack:** SvelteKit · TypeScript · TailwindCSS · DaisyUI · Vitest
 
 > **`$lib`** resolves to `src/library/`. Ensure `svelte.config.js` has `kit: { alias: { $lib: 'src/library' } }`.
 >
-> **Prerequisites:** Working SvelteKit project with TailwindCSS + DaisyUI installed. `src/library/stores/auth.ts` must export a writable `auth` store with shape `{ userId: string; outletId: string; userName: string; role: string }`. `src/library/mock/items.ts` must export a mutable `mockItems: Item[]` where each item has `{ id: string; name: string; stock: number }` — and at minimum two entries: `{ id: 'item-001', stock: 5, ... }` and `{ id: 'item-002', stock: 3, ... }`. `src/library/mock/transfers.ts` must export `mockTransferRecords` (from Item Transfer plan — create an empty array stub if absent). `src/library/mock/outlets.ts` must export `mockOutlets: { id: string; name: string }[]` (create stub if absent). `src/library/mock/item-masuk.ts` must export `submitItemMasuk()` (from Item Masuk plan — create a stub if absent).
+> **Prerequisites:** Working SvelteKit project with TailwindCSS + DaisyUI. `src/library/stores/auth.ts` exports writable `auth` store with shape `{ userId: string; outletId: string; userName: string; role: "cashier" | "manager" | "admin" }`. `src/library/mock/master-items.ts` (from Pergerakan Stok plan) exports `getMasterItems()`, `getMasterItemById()`, mutable `mockOutletStock: Record<string, OutletStock>` keyed by `"${itemId}_${outletId}"`, and `getDisplayStock(itemId: string, outletId: string): number` (returns `OutletStock.stock + OutletStock.preAdjDelta`). `src/library/mock/pergerakan-stok.ts` exports `createStokMasuk()`. `src/library/mock/transfers.ts` exports `mockTransferRecords` (empty array stub if absent). `src/library/mock/outlets.ts` exports `mockOutlets: { id: string; name: string }[]`.
 
 ---
 
@@ -21,14 +21,14 @@
 - `src/library/mock/pre-adjustments.ts` — seed data, all mock functions
 - `src/library/mock/pre-adjustments.test.ts` — Vitest unit tests for all mock functions
 - `src/library/components/outlet/pre-adjustment/PreAdjustmentModal.svelte` — shared create form modal
-- `src/routes/outlet/pre-adjustment/+page.svelte` — outlet Aktif + Riwayat page
-- `src/routes/factory/pre-adjustment/+page.svelte` — admin/auditor Adjustment dashboard
+- `src/routes/outlet/pre-adjustment/+page.svelte` — outlet Aktif + Riwayat page (all roles)
+- `src/routes/outlet/adjustment/+page.svelte` — admin Adjustment dashboard (admin only)
 
 **Modified:**
-- `src/routes/outlet/retail/+page.svelte` — import `getDisplayStock`; add Pre Adjustment quick button when display stock = 0
+- `src/routes/outlet/retail/+page.svelte` — add Pre Adjustment quick button when display stock = 0
 - `src/library/components/outlet/retail/CartSection.svelte` — use `getDisplayStock` for qty ceiling validation
-- `src/library/components/outlet/retail/Order.svelte` — use `getDisplayStock` per outlet column with active-adjustment badge (create stub if absent)
-- `src/library/mock/item-masuk.ts` — call `checkReconciliation()` after each successful Item Masuk submission
+- `src/library/components/outlet/retail/Order.svelte` — use `getDisplayStock` per outlet column with active-adjustment badge
+- `src/library/mock/pergerakan-stok.ts` — call `checkReconciliation()` inside `createStokMasuk()` after `logStockMovement()`
 
 ---
 
@@ -56,18 +56,19 @@ export interface StockPreAdjustment {
     id: string
     outletId: string
     itemId: string
-    delta: number                         // always a positive integer
+    delta: number                              // always a positive integer
     reason: PreAdjustmentReason
-    note: string                          // required free text
+    note: string                               // required free text
+    transferId: string | null                  // set only when reason === "transfer_input_error"
     status: PreAdjustmentStatus
     createdBy: string
-    createdAt: string                     // ISO timestamp
+    createdAt: string                          // ISO timestamp
     revertedBy: string | null
     revertedAt: string | null
     forceClosedBy: string | null
     forceClosedAt: string | null
-    forceCloseNote: string | null         // required when force-closing
-    reconciledItemMasukId: string | null  // auto-set by checkReconciliation
+    forceCloseNote: string | null              // required when force-closing
+    reconciledPergerakanStokId: string | null  // set by checkReconciliation
     reconciliationStatus: ReconciliationStatus
 }
 
@@ -77,6 +78,7 @@ export interface CreatePreAdjustmentPayload {
     delta: number
     reason: PreAdjustmentReason
     note: string
+    transferId?: string                        // only when reason === "transfer_input_error"
 }
 
 export interface ActiveTransferSummary {
@@ -116,41 +118,32 @@ git commit -m "feat: add PreAdjustment TypeScript types"
 
 import { describe, it, expect, beforeEach } from 'vitest'
 import {
-    getDisplayStock,
     getActivePreAdjustments,
     getAllPreAdjustments,
     getActiveTransfersForItem,
     resetPreAdjustments
 } from './pre-adjustments'
+import { getDisplayStock } from '$lib/mock/master-items'
 
 beforeEach(() => {
     resetPreAdjustments()
 })
 
-describe('getDisplayStock', () => {
-    it('returns item.stock unchanged when no active pre-adjustments exist for that item', () => {
-        // item-002 has no active PAs in seed data
+describe('getDisplayStock via preAdjDelta', () => {
+    it('returns stock + preAdjDelta for item with an open PA', () => {
+        // seed PA001: open, item-001, outlet-1, delta 2
+        // master-items seed: item-001 at outlet-1 has stock=5, preAdjDelta seeded to 2
+        expect(getDisplayStock('item-001', 'outlet-1')).toBe(7)
+    })
+
+    it('returns base stock when no open PAs exist for item', () => {
+        // item-002 at outlet-1 has no PAs in seed, preAdjDelta=0
         expect(getDisplayStock('item-002', 'outlet-1')).toBe(3)
     })
 
-    it('adds delta of open pre-adjustments to item.stock', () => {
-        // seed PA001: open, item-001, outlet-1, delta 2 → 5 + 2 = 7
-        expect(getDisplayStock('item-001', 'outlet-1')).toBe(7)
-    })
-
-    it('ignores open pre-adjustments for a different outlet', () => {
-        // PA001 belongs to outlet-1, not outlet-2
+    it('returns base stock for a different outlet with no open PAs', () => {
+        // item-001 at outlet-2 has no PAs in seed
         expect(getDisplayStock('item-001', 'outlet-2')).toBe(5)
-    })
-
-    it('ignores reverted pre-adjustments', () => {
-        // seed PA002: reverted, item-001, outlet-1, delta 1 — must not contribute
-        // only PA001 (open, delta 2) contributes → 5 + 2 = 7
-        expect(getDisplayStock('item-001', 'outlet-1')).toBe(7)
-    })
-
-    it('returns 0 for an unknown itemId', () => {
-        expect(getDisplayStock('nonexistent', 'outlet-1')).toBe(0)
     })
 })
 
@@ -182,7 +175,6 @@ describe('getAllPreAdjustments', () => {
 
 describe('getActiveTransfersForItem', () => {
     it('returns summaries for unaccepted transfers from the given outlet', () => {
-        // requires seed transfer in mockTransferRecords: from outlet-1, item-001, status 'active'
         const result = getActiveTransfersForItem('item-001', 'outlet-1')
         if (result.length > 0) {
             expect(result[0]).toMatchObject({
@@ -217,7 +209,7 @@ import type {
     CreatePreAdjustmentPayload,
     ActiveTransferSummary
 } from '$lib/types/PreAdjustment'
-import { mockItems } from './items'
+import { mockOutletStock } from './master-items'
 import { mockTransferRecords } from './transfers'
 import { mockOutlets } from './outlets'
 
@@ -229,6 +221,7 @@ const SEED: StockPreAdjustment[] = [
         delta: 2,
         reason: 'missing_item_masuk',
         note: 'Shift kemarin lupa input Item Masuk Aqua 600ml sebanyak 2 pcs',
+        transferId: null,
         status: 'open',
         createdBy: 'user-cashier-1',
         createdAt: '2026-05-09T06:00:00.000Z',
@@ -237,7 +230,7 @@ const SEED: StockPreAdjustment[] = [
         forceClosedBy: null,
         forceClosedAt: null,
         forceCloseNote: null,
-        reconciledItemMasukId: null,
+        reconciledPergerakanStokId: null,
         reconciliationStatus: 'pending'
     },
     {
@@ -246,7 +239,8 @@ const SEED: StockPreAdjustment[] = [
         itemId: 'item-001',
         delta: 1,
         reason: 'transfer_input_error',
-        note: 'Transfer T009 salah input qty, harusnya 2 bukan 3',
+        note: 'Transfer salah input qty, harusnya 2 bukan 3',
+        transferId: 'TRF-00009',
         status: 'reverted',
         createdBy: 'user-cashier-2',
         createdAt: '2026-05-08T10:00:00.000Z',
@@ -255,24 +249,26 @@ const SEED: StockPreAdjustment[] = [
         forceClosedBy: null,
         forceClosedAt: null,
         forceCloseNote: null,
-        reconciledItemMasukId: null,
+        reconciledPergerakanStokId: null,
         reconciliationStatus: 'pending'
     }
 ]
 
+let idCounter = 100
 let mockPreAdjustments: StockPreAdjustment[] = structuredClone(SEED)
+
+// Sync preAdjDelta in mockOutletStock to match the open seed entries.
+// PA001 is open (item-001, outlet-1, delta 2) → preAdjDelta = 2.
+function applySeededDeltas(): void {
+    const key = 'item-001_outlet-1'
+    if (mockOutletStock[key]) mockOutletStock[key].preAdjDelta = 2
+}
+applySeededDeltas()
 
 export function resetPreAdjustments(): void {
     mockPreAdjustments = structuredClone(SEED)
-}
-
-export function getDisplayStock(itemId: string, outletId: string): number {
-    const item = mockItems.find(i => i.id === itemId)
-    if (!item) return 0
-    const activeDelta = mockPreAdjustments
-        .filter(pa => pa.itemId === itemId && pa.outletId === outletId && pa.status === 'open')
-        .reduce((sum, pa) => sum + pa.delta, 0)
-    return item.stock + activeDelta
+    idCounter = 100
+    applySeededDeltas()
 }
 
 export function getActivePreAdjustments(outletId?: string): StockPreAdjustment[] {
@@ -307,13 +303,13 @@ export function getActiveTransfersForItem(itemId: string, outletId: string): Act
 export { mockPreAdjustments }
 ```
 
-- [ ] **Step 4: Run tests — verify query tests pass**
+- [ ] **Step 4: Run tests — verify they pass**
 
 ```bash
 npx vitest run src/library/mock/pre-adjustments.test.ts
 ```
 
-Expected: PASS — all `getDisplayStock`, `getActivePreAdjustments`, `getAllPreAdjustments`, `getActiveTransfersForItem` tests
+Expected: PASS — all query and `getDisplayStock` assertions
 
 - [ ] **Step 5: Commit**
 
@@ -330,9 +326,7 @@ git commit -m "feat: add pre-adjustment mock seed data and query functions"
 - Modify: `src/library/mock/pre-adjustments.ts`
 - Modify: `src/library/mock/pre-adjustments.test.ts`
 
-- [ ] **Step 1: Write failing tests for mutation and reconciliation functions**
-
-Append to `src/library/mock/pre-adjustments.test.ts`:
+- [ ] **Step 1: Write failing tests — append to `pre-adjustments.test.ts`**
 
 ```typescript
 import {
@@ -342,9 +336,10 @@ import {
     markStaleAsUnresolved,
     checkReconciliation
 } from './pre-adjustments'
+import { getDisplayStock, mockOutletStock } from '$lib/mock/master-items'
 
 describe('createPreAdjustment', () => {
-    it('increases display stock by delta immediately', () => {
+    it('increases preAdjDelta by delta — display stock rises', () => {
         const before = getDisplayStock('item-002', 'outlet-1')
         createPreAdjustment(
             { outletId: 'outlet-1', itemId: 'item-002', delta: 3, reason: 'missing_item_masuk', note: 'Test' },
@@ -362,6 +357,22 @@ describe('createPreAdjustment', () => {
         expect(pa.reconciliationStatus).toBe('pending')
         expect(pa.revertedBy).toBeNull()
         expect(pa.forceClosedBy).toBeNull()
+        expect(pa.transferId).toBeNull()
+    })
+
+    it('stores transferId when reason is transfer_input_error', () => {
+        const pa = createPreAdjustment(
+            {
+                outletId: 'outlet-1',
+                itemId: 'item-002',
+                delta: 1,
+                reason: 'transfer_input_error',
+                note: 'Transfer salah',
+                transferId: 'TRF-00042'
+            },
+            'user-cashier-1'
+        )
+        expect(pa.transferId).toBe('TRF-00042')
     })
 })
 
@@ -374,8 +385,8 @@ describe('revertPreAdjustment', () => {
         expect(pa.revertedAt).toBeTruthy()
     })
 
-    it('drops display stock by the reverted delta', () => {
-        const before = getDisplayStock('item-001', 'outlet-1')  // 7 (5 base + 2 from PA001)
+    it('decreases preAdjDelta by delta — display stock drops', () => {
+        const before = getDisplayStock('item-001', 'outlet-1')  // 7 (5 base + 2 preAdjDelta from PA001)
         revertPreAdjustment('PA001', 'user-cashier-1')
         expect(getDisplayStock('item-001', 'outlet-1')).toBe(before - 2)
     })
@@ -397,7 +408,7 @@ describe('forceClosePreAdjustment', () => {
         expect(pa.forceClosedAt).toBeTruthy()
     })
 
-    it('drops display stock after force close', () => {
+    it('decreases preAdjDelta by delta — display stock drops', () => {
         const before = getDisplayStock('item-001', 'outlet-1')
         forceClosePreAdjustment('PA001', 'user-admin-1', 'Reason')
         expect(getDisplayStock('item-001', 'outlet-1')).toBe(before - 2)
@@ -406,41 +417,34 @@ describe('forceClosePreAdjustment', () => {
 
 describe('markStaleAsUnresolved', () => {
     it('flips reconciliationStatus to unresolved for reverted entries pending > 7 days', () => {
-        // Simulate PA002 was reverted 8 days ago
         const pa2 = getAllPreAdjustments('outlet-1').find(p => p.id === 'PA002')!
         pa2.revertedAt = new Date(Date.now() - 8 * 24 * 60 * 60 * 1000).toISOString()
         markStaleAsUnresolved()
-        const updated = getAllPreAdjustments('outlet-1').find(p => p.id === 'PA002')!
-        expect(updated.reconciliationStatus).toBe('unresolved')
+        expect(getAllPreAdjustments('outlet-1').find(p => p.id === 'PA002')!.reconciliationStatus).toBe('unresolved')
     })
 
     it('does not flip entries reverted fewer than 7 days ago', () => {
         const pa2 = getAllPreAdjustments('outlet-1').find(p => p.id === 'PA002')!
         pa2.revertedAt = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString()
         markStaleAsUnresolved()
-        const updated = getAllPreAdjustments('outlet-1').find(p => p.id === 'PA002')!
-        expect(updated.reconciliationStatus).toBe('pending')
+        expect(getAllPreAdjustments('outlet-1').find(p => p.id === 'PA002')!.reconciliationStatus).toBe('pending')
     })
 })
 
 describe('checkReconciliation', () => {
-    it('marks pending reverted PAs as reconciled when item stock is non-negative after masuk', () => {
+    it('marks pending reverted PAs as reconciled when stock >= 0', () => {
         revertPreAdjustment('PA001', 'user-cashier-1')
-        // Simulate: 2 items sold against the PA → real stock = 5 - 2 = 3, then - wait...
-        // More realistic: stock was 0 (forgot to input), pre-adj +2, sold 2, real stock = -2
-        // Item Masuk of 2 applied externally → stock now = 0
-        mockItems.find(i => i.id === 'item-001')!.stock = 0
-        checkReconciliation({ id: 'IM001', outletId: 'outlet-1', itemId: 'item-001', qty: 2 })
+        mockOutletStock['item-001_outlet-1'].stock = 0
+        checkReconciliation('IM-00001', 'outlet-1', 'item-001')
         const pa = getAllPreAdjustments('outlet-1').find(p => p.id === 'PA001')!
         expect(pa.reconciliationStatus).toBe('reconciled')
-        expect(pa.reconciledItemMasukId).toBe('IM001')
+        expect(pa.reconciledPergerakanStokId).toBe('IM-00001')
     })
 
-    it('does not mark reconciled when item stock is still negative after masuk', () => {
+    it('does not mark reconciled when stock is still negative', () => {
         revertPreAdjustment('PA001', 'user-cashier-1')
-        // Only partial coverage — stock still negative
-        mockItems.find(i => i.id === 'item-001')!.stock = -1
-        checkReconciliation({ id: 'IM002', outletId: 'outlet-1', itemId: 'item-001', qty: 1 })
+        mockOutletStock['item-001_outlet-1'].stock = -1
+        checkReconciliation('IM-00002', 'outlet-1', 'item-001')
         const pa = getAllPreAdjustments('outlet-1').find(p => p.id === 'PA001')!
         expect(pa.reconciliationStatus).toBe('pending')
     })
@@ -455,20 +459,13 @@ npx vitest run src/library/mock/pre-adjustments.test.ts
 
 Expected: FAIL — mutation functions not exported
 
-- [ ] **Step 3: Append mutation and reconciliation functions to the mock file**
-
-Add after the last export in `src/library/mock/pre-adjustments.ts`:
+- [ ] **Step 3: Append mutation and reconciliation functions to `pre-adjustments.ts`**
 
 ```typescript
-let idCounter = 100
-
-// Also update resetPreAdjustments to reset the counter — replace the existing function:
-export function resetPreAdjustments(): void {
-    mockPreAdjustments = structuredClone(SEED)
-    idCounter = 100
-}
-
 export function createPreAdjustment(payload: CreatePreAdjustmentPayload, userId: string): StockPreAdjustment {
+    const key = `${payload.itemId}_${payload.outletId}`
+    if (mockOutletStock[key]) mockOutletStock[key].preAdjDelta += payload.delta
+
     const pa: StockPreAdjustment = {
         id: `PA${++idCounter}`,
         outletId: payload.outletId,
@@ -476,6 +473,7 @@ export function createPreAdjustment(payload: CreatePreAdjustmentPayload, userId:
         delta: payload.delta,
         reason: payload.reason,
         note: payload.note,
+        transferId: payload.transferId ?? null,
         status: 'open',
         createdBy: userId,
         createdAt: new Date().toISOString(),
@@ -484,7 +482,7 @@ export function createPreAdjustment(payload: CreatePreAdjustmentPayload, userId:
         forceClosedBy: null,
         forceClosedAt: null,
         forceCloseNote: null,
-        reconciledItemMasukId: null,
+        reconciledPergerakanStokId: null,
         reconciliationStatus: 'pending'
     }
     mockPreAdjustments.push(pa)
@@ -494,6 +492,8 @@ export function createPreAdjustment(payload: CreatePreAdjustmentPayload, userId:
 export function revertPreAdjustment(id: string, userId: string): void {
     const pa = mockPreAdjustments.find(p => p.id === id)
     if (!pa || pa.status !== 'open') return
+    const key = `${pa.itemId}_${pa.outletId}`
+    if (mockOutletStock[key]) mockOutletStock[key].preAdjDelta -= pa.delta
     pa.status = 'reverted'
     pa.revertedBy = userId
     pa.revertedAt = new Date().toISOString()
@@ -502,6 +502,8 @@ export function revertPreAdjustment(id: string, userId: string): void {
 export function forceClosePreAdjustment(id: string, adminId: string, note: string): void {
     const pa = mockPreAdjustments.find(p => p.id === id)
     if (!pa || pa.status !== 'open') return
+    const key = `${pa.itemId}_${pa.outletId}`
+    if (mockOutletStock[key]) mockOutletStock[key].preAdjDelta -= pa.delta
     pa.status = 'force_closed'
     pa.forceClosedBy = adminId
     pa.forceClosedAt = new Date().toISOString()
@@ -519,27 +521,21 @@ export function markStaleAsUnresolved(): void {
     }
 }
 
-interface ItemMasukRef {
-    id: string
-    outletId: string
-    itemId: string
-    qty: number
-}
-
-// Called by submitItemMasuk AFTER item.stock has already been updated by the masuk.
-// Checks if stock is now non-negative; if so, marks matching pending PAs as reconciled.
-export function checkReconciliation(masuk: ItemMasukRef): void {
-    const item = mockItems.find(i => i.id === masuk.itemId)
-    if (!item || item.stock < 0) return
+// Called inside createStokMasuk() in mock/pergerakan-stok.ts after logStockMovement() has updated OutletStock.stock.
+// If stock >= 0, all pending reverted/force-closed PAs for this item/outlet are marked reconciled.
+export function checkReconciliation(stokMasukId: string, outletId: string, itemId: string): void {
+    const key = `${itemId}_${outletId}`
+    const outletStock = mockOutletStock[key]
+    if (!outletStock || outletStock.stock < 0) return
     const pending = mockPreAdjustments.filter(pa =>
-        pa.itemId === masuk.itemId &&
-        pa.outletId === masuk.outletId &&
+        pa.itemId === itemId &&
+        pa.outletId === outletId &&
         (pa.status === 'reverted' || pa.status === 'force_closed') &&
         pa.reconciliationStatus === 'pending'
     )
     for (const pa of pending) {
         pa.reconciliationStatus = 'reconciled'
-        pa.reconciledItemMasukId = masuk.id
+        pa.reconciledPergerakanStokId = stokMasukId
     }
 }
 ```
@@ -574,32 +570,35 @@ git commit -m "feat: add pre-adjustment mutation and reconciliation mock functio
     import { get } from 'svelte/store'
     import { auth } from '$lib/stores/auth'
     import { createPreAdjustment, getActiveTransfersForItem } from '$lib/mock/pre-adjustments'
-    import { mockItems } from '$lib/mock/items'
+    import { getMasterItems, getDisplayStock } from '$lib/mock/master-items'
     import { REASON_LABELS } from '$lib/types/PreAdjustment'
     import type { PreAdjustmentReason, ActiveTransferSummary } from '$lib/types/PreAdjustment'
 
     export let open = false
-    export let prefilledItemId: string = ''    // set when opened from POS
+    export let prefilledItemId: string = ''
     export let onCreated: () => void = () => {}
 
     let itemId = prefilledItemId
     let delta = 1
     let reason: PreAdjustmentReason | '' = ''
+    let transferRef = ''
     let note = ''
     let activeTransfers: ActiveTransferSummary[] = []
     let submitting = false
     let errors: Record<string, string> = {}
 
-    $: {
-        itemId = prefilledItemId || itemId
-    }
+    const session = get(auth)
+    const masterItems = getMasterItems()
+
+    $: if (prefilledItemId) itemId = prefilledItemId
 
     $: if (itemId) {
-        const session = get(auth)
         activeTransfers = getActiveTransfersForItem(itemId, session.outletId)
     } else {
         activeTransfers = []
     }
+
+    $: if (reason !== 'transfer_input_error') transferRef = ''
 
     function validate(): boolean {
         errors = {}
@@ -613,9 +612,17 @@ git commit -m "feat: add pre-adjustment mutation and reconciliation mock functio
     function submit() {
         if (!validate()) return
         submitting = true
-        const session = get(auth)
         createPreAdjustment(
-            { outletId: session.outletId, itemId, delta, reason: reason as PreAdjustmentReason, note: note.trim() },
+            {
+                outletId: session.outletId,
+                itemId,
+                delta,
+                reason: reason as PreAdjustmentReason,
+                note: note.trim(),
+                ...(reason === 'transfer_input_error' && transferRef.trim()
+                    ? { transferId: transferRef.trim() }
+                    : {})
+            },
             session.userId
         )
         submitting = false
@@ -625,9 +632,10 @@ git commit -m "feat: add pre-adjustment mutation and reconciliation mock functio
 
     function close() {
         open = false
-        itemId = ''
+        itemId = prefilledItemId || ''
         delta = 1
         reason = ''
+        transferRef = ''
         note = ''
         errors = {}
         activeTransfers = []
@@ -655,14 +663,14 @@ git commit -m "feat: add pre-adjustment mutation and reconciliation mock functio
             {#if prefilledItemId}
                 <input
                     class="input input-bordered"
-                    value={mockItems.find(i => i.id === itemId)?.name ?? itemId}
+                    value={masterItems.find(i => i.id === itemId)?.name ?? itemId}
                     disabled
                 />
             {:else}
                 <select class="select select-bordered" bind:value={itemId}>
                     <option value="">-- Pilih item --</option>
-                    {#each mockItems as item}
-                        <option value={item.id}>{item.name}</option>
+                    {#each masterItems as item}
+                        <option value={item.id}>{item.name} (Stok: {getDisplayStock(item.id, session.outletId)})</option>
                     {/each}
                 </select>
             {/if}
@@ -685,6 +693,18 @@ git commit -m "feat: add pre-adjustment mutation and reconciliation mock functio
             </select>
             {#if errors.reason}<span class="text-error text-xs mt-1">{errors.reason}</span>{/if}
         </div>
+
+        {#if reason === 'transfer_input_error'}
+            <div class="form-control mb-3">
+                <label class="label"><span class="label-text">Transfer Ref</span></label>
+                <input
+                    type="text"
+                    class="input input-bordered"
+                    bind:value={transferRef}
+                    placeholder="Contoh: TRF-00023"
+                />
+            </div>
+        {/if}
 
         <div class="form-control mb-4">
             <label class="label"><span class="label-text">Catatan</span></label>
@@ -713,7 +733,7 @@ git commit -m "feat: add pre-adjustment mutation and reconciliation mock functio
 
 ```bash
 git add src/library/components/outlet/pre-adjustment/PreAdjustmentModal.svelte
-git commit -m "feat: add PreAdjustmentModal shared component with transfer warning banner"
+git commit -m "feat: add PreAdjustmentModal with transfer warning banner and Transfer Ref field"
 ```
 
 ---
@@ -737,19 +757,30 @@ git commit -m "feat: add PreAdjustmentModal shared component with transfer warni
         revertPreAdjustment,
         markStaleAsUnresolved
     } from '$lib/mock/pre-adjustments'
+    import { getMasterItems } from '$lib/mock/master-items'
     import { REASON_LABELS } from '$lib/types/PreAdjustment'
     import type { StockPreAdjustment } from '$lib/types/PreAdjustment'
-    import { mockItems } from '$lib/mock/items'
     import PreAdjustmentModal from '$lib/components/outlet/pre-adjustment/PreAdjustmentModal.svelte'
 
     let activeTab: 'aktif' | 'riwayat' = 'aktif'
     let showCreateModal = false
     let revertTarget: StockPreAdjustment | null = null
-    let expandedId: string | null = null
 
     const session = get(auth)
+    const masterItems = getMasterItems()
+
     let active: StockPreAdjustment[] = []
     let history: StockPreAdjustment[] = []
+
+    // Aktif tab
+    let searchAktif = ''
+    let perPageAktif: 10 | 25 | 50 | 100 = 25
+    let currentPageAktif = 1
+
+    // Riwayat tab
+    let searchRiwayat = ''
+    let perPageRiwayat: 10 | 25 | 50 | 100 = 25
+    let currentPageRiwayat = 1
 
     onMount(() => {
         markStaleAsUnresolved()
@@ -762,7 +793,7 @@ git commit -m "feat: add PreAdjustmentModal shared component with transfer warni
     }
 
     function itemName(id: string): string {
-        return mockItems.find(i => i.id === id)?.name ?? id
+        return masterItems.find(i => i.id === id)?.name ?? id
     }
 
     function ageLabel(createdAt: string): { label: string; stale: boolean } {
@@ -796,14 +827,49 @@ git commit -m "feat: add PreAdjustmentModal shared component with transfer warni
         const raw = pa.revertedAt ?? pa.forceClosedAt
         return raw ? new Date(raw).toLocaleDateString('id-ID') : '-'
     }
+
+    // Aktif tab reactive
+    $: filteredAktif = active.filter(pa => {
+        const q = searchAktif.toLowerCase()
+        return (
+            itemName(pa.itemId).toLowerCase().includes(q) ||
+            REASON_LABELS[pa.reason].toLowerCase().includes(q) ||
+            pa.note.toLowerCase().includes(q)
+        )
+    })
+    $: totalPagesAktif = Math.max(1, Math.ceil(filteredAktif.length / perPageAktif))
+    $: paginatedAktif = filteredAktif.slice((currentPageAktif - 1) * perPageAktif, currentPageAktif * perPageAktif)
+    $: if (searchAktif !== undefined || perPageAktif) currentPageAktif = 1
+    $: pageButtonsAktif = (() => {
+        let start = Math.max(1, currentPageAktif - 2)
+        let end = Math.min(totalPagesAktif, start + 4)
+        if (end - start < 4) start = Math.max(1, end - 4)
+        return Array.from({ length: end - start + 1 }, (_, i) => start + i)
+    })()
+
+    // Riwayat tab reactive
+    $: filteredRiwayat = history.filter(pa => {
+        const q = searchRiwayat.toLowerCase()
+        return (
+            itemName(pa.itemId).toLowerCase().includes(q) ||
+            REASON_LABELS[pa.reason].toLowerCase().includes(q)
+        )
+    })
+    $: totalPagesRiwayat = Math.max(1, Math.ceil(filteredRiwayat.length / perPageRiwayat))
+    $: paginatedRiwayat = filteredRiwayat.slice((currentPageRiwayat - 1) * perPageRiwayat, currentPageRiwayat * perPageRiwayat)
+    $: if (searchRiwayat !== undefined || perPageRiwayat) currentPageRiwayat = 1
+    $: pageButtonsRiwayat = (() => {
+        let start = Math.max(1, currentPageRiwayat - 2)
+        let end = Math.min(totalPagesRiwayat, start + 4)
+        if (end - start < 4) start = Math.max(1, end - 4)
+        return Array.from({ length: end - start + 1 }, (_, i) => start + i)
+    })()
 </script>
 
 <div class="p-6 max-w-6xl mx-auto">
     <div class="flex items-center justify-between mb-6">
         <h1 class="text-2xl font-bold">Pre Adjustment</h1>
-        <button class="btn btn-primary" on:click={() => showCreateModal = true}>
-            + Buat Pre Adjustment
-        </button>
+        <button class="btn btn-primary" on:click={() => showCreateModal = true}>+ Buat Pre Adjustment</button>
     </div>
 
     <div class="tabs tabs-boxed mb-4">
@@ -816,7 +882,17 @@ git commit -m "feat: add PreAdjustmentModal shared component with transfer warni
     </div>
 
     {#if activeTab === 'aktif'}
-        {#if active.length === 0}
+        <div class="flex items-center justify-between gap-4 mb-4">
+            <input type="text" class="input input-bordered input-sm w-72" placeholder="Cari..." bind:value={searchAktif} />
+            <select class="select select-bordered select-sm" bind:value={perPageAktif}>
+                <option value={10}>10 / halaman</option>
+                <option value={25}>25 / halaman</option>
+                <option value={50}>50 / halaman</option>
+                <option value={100}>100 / halaman</option>
+            </select>
+        </div>
+
+        {#if paginatedAktif.length === 0}
             <p class="text-base-content/50 text-sm">Tidak ada Pre Adjustment aktif.</p>
         {:else}
             <div class="overflow-x-auto">
@@ -828,7 +904,7 @@ git commit -m "feat: add PreAdjustmentModal shared component with transfer warni
                         </tr>
                     </thead>
                     <tbody>
-                        {#each active as pa}
+                        {#each paginatedAktif as pa}
                             {@const age = ageLabel(pa.createdAt)}
                             <tr>
                                 <td>{itemName(pa.itemId)}</td>
@@ -843,19 +919,37 @@ git commit -m "feat: add PreAdjustmentModal shared component with transfer warni
                                     </span>
                                 </td>
                                 <td>
-                                    <button class="btn btn-xs btn-error" on:click={() => revertTarget = pa}>
-                                        Revert
-                                    </button>
+                                    <button class="btn btn-xs btn-error" on:click={() => revertTarget = pa}>Revert</button>
                                 </td>
                             </tr>
                         {/each}
                     </tbody>
                 </table>
             </div>
+
+            {#if totalPagesAktif > 1}
+                <div class="flex justify-center items-center gap-1 mt-4">
+                    <button class="btn btn-sm btn-ghost" disabled={currentPageAktif === 1} on:click={() => currentPageAktif--}>‹</button>
+                    {#each pageButtonsAktif as p}
+                        <button class="btn btn-sm {p === currentPageAktif ? 'btn-primary' : 'btn-ghost'}" on:click={() => currentPageAktif = p}>{p}</button>
+                    {/each}
+                    <button class="btn btn-sm btn-ghost" disabled={currentPageAktif === totalPagesAktif} on:click={() => currentPageAktif++}>›</button>
+                </div>
+            {/if}
         {/if}
 
     {:else}
-        {#if history.length === 0}
+        <div class="flex items-center justify-between gap-4 mb-4">
+            <input type="text" class="input input-bordered input-sm w-72" placeholder="Cari..." bind:value={searchRiwayat} />
+            <select class="select select-bordered select-sm" bind:value={perPageRiwayat}>
+                <option value={10}>10 / halaman</option>
+                <option value={25}>25 / halaman</option>
+                <option value={50}>50 / halaman</option>
+                <option value={100}>100 / halaman</option>
+            </select>
+        </div>
+
+        {#if paginatedRiwayat.length === 0}
             <p class="text-base-content/50 text-sm">Belum ada riwayat Pre Adjustment.</p>
         {:else}
             <div class="overflow-x-auto">
@@ -867,8 +961,8 @@ git commit -m "feat: add PreAdjustmentModal shared component with transfer warni
                         </tr>
                     </thead>
                     <tbody>
-                        {#each history as pa}
-                            <tr class="cursor-pointer" on:click={() => expandedId = expandedId === pa.id ? null : pa.id}>
+                        {#each paginatedRiwayat as pa}
+                            <tr>
                                 <td>{itemName(pa.itemId)}</td>
                                 <td>+{pa.delta}</td>
                                 <td>{REASON_LABELS[pa.reason]}</td>
@@ -878,20 +972,26 @@ git commit -m "feat: add PreAdjustmentModal shared component with transfer warni
                                 <td>
                                     <span class="badge badge-sm {reconciliationBadgeClass(pa.reconciliationStatus)}">
                                         {reconciliationLabel(pa.reconciliationStatus)}
+                                        {#if pa.reconciliationStatus === 'reconciled' && pa.reconciledPergerakanStokId}
+                                            · {pa.reconciledPergerakanStokId}
+                                        {/if}
                                     </span>
                                 </td>
                             </tr>
-                            {#if expandedId === pa.id && pa.reconciliationStatus === 'reconciled'}
-                                <tr class="bg-base-200">
-                                    <td colspan="7" class="text-xs text-base-content/70 pl-6">
-                                        Direkonsiliasi dengan Item Masuk ref: <strong>{pa.reconciledItemMasukId}</strong>
-                                    </td>
-                                </tr>
-                            {/if}
                         {/each}
                     </tbody>
                 </table>
             </div>
+
+            {#if totalPagesRiwayat > 1}
+                <div class="flex justify-center items-center gap-1 mt-4">
+                    <button class="btn btn-sm btn-ghost" disabled={currentPageRiwayat === 1} on:click={() => currentPageRiwayat--}>‹</button>
+                    {#each pageButtonsRiwayat as p}
+                        <button class="btn btn-sm {p === currentPageRiwayat ? 'btn-primary' : 'btn-ghost'}" on:click={() => currentPageRiwayat = p}>{p}</button>
+                    {/each}
+                    <button class="btn btn-sm btn-ghost" disabled={currentPageRiwayat === totalPagesRiwayat} on:click={() => currentPageRiwayat++}>›</button>
+                </div>
+            {/if}
         {/if}
     {/if}
 </div>
@@ -920,20 +1020,20 @@ git commit -m "feat: add PreAdjustmentModal shared component with transfer warni
 
 ```bash
 git add src/routes/outlet/pre-adjustment/+page.svelte
-git commit -m "feat: add outlet Pre Adjustment page with Aktif and Riwayat tabs"
+git commit -m "feat: add outlet Pre Adjustment page with search, pagination, Aktif and Riwayat tabs"
 ```
 
 ---
 
-## Task 6: Factory Adjustment Dashboard
+## Task 6: Admin Adjustment Page
 
 **Files:**
-- Create: `src/routes/factory/pre-adjustment/+page.svelte`
+- Create: `src/routes/outlet/adjustment/+page.svelte`
 
-- [ ] **Step 1: Create the factory page**
+- [ ] **Step 1: Create the admin adjustment page**
 
 ```svelte
-<!-- src/routes/factory/pre-adjustment/+page.svelte -->
+<!-- src/routes/outlet/adjustment/+page.svelte -->
 <script lang="ts">
     import { onMount } from 'svelte'
     import { get } from 'svelte/store'
@@ -944,10 +1044,14 @@ git commit -m "feat: add outlet Pre Adjustment page with Aktif and Riwayat tabs"
         forceClosePreAdjustment,
         markStaleAsUnresolved
     } from '$lib/mock/pre-adjustments'
+    import { getMasterItems } from '$lib/mock/master-items'
     import { REASON_LABELS } from '$lib/types/PreAdjustment'
     import type { StockPreAdjustment } from '$lib/types/PreAdjustment'
-    import { mockItems } from '$lib/mock/items'
     import { mockOutlets } from '$lib/mock/outlets'
+    import { goto } from '$app/navigation'
+
+    const session = get(auth)
+    if (session.role !== 'admin') goto('/outlet/pre-adjustment')
 
     let activeTab: 'aktif' | 'riwayat' = 'aktif'
     let active: StockPreAdjustment[] = []
@@ -955,6 +1059,19 @@ git commit -m "feat: add outlet Pre Adjustment page with Aktif and Riwayat tabs"
     let forceCloseTarget: StockPreAdjustment | null = null
     let forceCloseNote = ''
     let forceCloseError = ''
+
+    const masterItems = getMasterItems()
+
+    // Aktif tab
+    let searchAktif = ''
+    let perPageAktif: 10 | 25 | 50 | 100 = 25
+    let currentPageAktif = 1
+
+    // Riwayat tab
+    let searchRiwayat = ''
+    let statusFilter: 'semua' | 'reverted' | 'force_closed' | 'reconciled' | 'unresolved' = 'semua'
+    let perPageRiwayat: 10 | 25 | 50 | 100 = 25
+    let currentPageRiwayat = 1
 
     onMount(() => {
         markStaleAsUnresolved()
@@ -967,7 +1084,7 @@ git commit -m "feat: add outlet Pre Adjustment page with Aktif and Riwayat tabs"
     }
 
     function itemName(id: string): string {
-        return mockItems.find(i => i.id === id)?.name ?? id
+        return masterItems.find(i => i.id === id)?.name ?? id
     }
 
     function outletName(id: string): string {
@@ -989,11 +1106,7 @@ git commit -m "feat: add outlet Pre Adjustment page with Aktif and Riwayat tabs"
     }
 
     function doForceClose() {
-        if (!forceCloseNote.trim()) {
-            forceCloseError = 'Catatan wajib diisi'
-            return
-        }
-        const session = get(auth)
+        if (!forceCloseNote.trim()) { forceCloseError = 'Catatan wajib diisi'; return }
         forceClosePreAdjustment(forceCloseTarget!.id, session.userId, forceCloseNote.trim())
         forceCloseTarget = null
         refresh()
@@ -1014,9 +1127,9 @@ git commit -m "feat: add outlet Pre Adjustment page with Aktif and Riwayat tabs"
     }
 
     function reconciliationLabel(status: string): string {
-        if (status === 'reconciled') return 'Rekonsiliasi'
-        if (status === 'unresolved') return 'Belum Rekonsiliasi'
-        return 'Menunggu'
+        if (status === 'reconciled') return 'Reconciled'
+        if (status === 'unresolved') return 'Unresolved'
+        return 'Pending'
     }
 
     function closedAt(pa: StockPreAdjustment): string {
@@ -1024,10 +1137,48 @@ git commit -m "feat: add outlet Pre Adjustment page with Aktif and Riwayat tabs"
         return raw ? new Date(raw).toLocaleDateString('id-ID') : '-'
     }
 
-    function transferRef(pa: StockPreAdjustment): string | null {
-        if (pa.reason !== 'transfer_input_error') return null
-        return pa.note.match(/T\d+/)?.[0] ?? null
-    }
+    // Aktif tab reactive
+    $: filteredAktif = active.filter(pa => {
+        const q = searchAktif.toLowerCase()
+        return (
+            outletName(pa.outletId).toLowerCase().includes(q) ||
+            itemName(pa.itemId).toLowerCase().includes(q) ||
+            pa.note.toLowerCase().includes(q)
+        )
+    })
+    $: totalPagesAktif = Math.max(1, Math.ceil(filteredAktif.length / perPageAktif))
+    $: paginatedAktif = filteredAktif.slice((currentPageAktif - 1) * perPageAktif, currentPageAktif * perPageAktif)
+    $: if (searchAktif !== undefined || perPageAktif) currentPageAktif = 1
+    $: pageButtonsAktif = (() => {
+        let start = Math.max(1, currentPageAktif - 2)
+        let end = Math.min(totalPagesAktif, start + 4)
+        if (end - start < 4) start = Math.max(1, end - 4)
+        return Array.from({ length: end - start + 1 }, (_, i) => start + i)
+    })()
+
+    // Riwayat tab reactive
+    $: filteredRiwayat = history.filter(pa => {
+        const q = searchRiwayat.toLowerCase()
+        const matchesSearch = (
+            outletName(pa.outletId).toLowerCase().includes(q) ||
+            itemName(pa.itemId).toLowerCase().includes(q) ||
+            REASON_LABELS[pa.reason].toLowerCase().includes(q)
+        )
+        const matchesStatus = statusFilter === 'semua' ? true
+            : statusFilter === 'reconciled' ? pa.reconciliationStatus === 'reconciled'
+            : statusFilter === 'unresolved' ? pa.reconciliationStatus === 'unresolved'
+            : pa.status === statusFilter
+        return matchesSearch && matchesStatus
+    })
+    $: totalPagesRiwayat = Math.max(1, Math.ceil(filteredRiwayat.length / perPageRiwayat))
+    $: paginatedRiwayat = filteredRiwayat.slice((currentPageRiwayat - 1) * perPageRiwayat, currentPageRiwayat * perPageRiwayat)
+    $: if (searchRiwayat !== undefined || perPageRiwayat || statusFilter) currentPageRiwayat = 1
+    $: pageButtonsRiwayat = (() => {
+        let start = Math.max(1, currentPageRiwayat - 2)
+        let end = Math.min(totalPagesRiwayat, start + 4)
+        if (end - start < 4) start = Math.max(1, end - 4)
+        return Array.from({ length: end - start + 1 }, (_, i) => start + i)
+    })()
 </script>
 
 <div class="p-6 max-w-7xl mx-auto">
@@ -1043,7 +1194,17 @@ git commit -m "feat: add outlet Pre Adjustment page with Aktif and Riwayat tabs"
     </div>
 
     {#if activeTab === 'aktif'}
-        {#if active.length === 0}
+        <div class="flex items-center justify-between gap-4 mb-4">
+            <input type="text" class="input input-bordered input-sm w-72" placeholder="Cari outlet, produk, catatan..." bind:value={searchAktif} />
+            <select class="select select-bordered select-sm" bind:value={perPageAktif}>
+                <option value={10}>10 / halaman</option>
+                <option value={25}>25 / halaman</option>
+                <option value={50}>50 / halaman</option>
+                <option value={100}>100 / halaman</option>
+            </select>
+        </div>
+
+        {#if paginatedAktif.length === 0}
             <p class="text-base-content/50 text-sm">Tidak ada Pre Adjustment aktif di semua outlet.</p>
         {:else}
             <div class="overflow-x-auto">
@@ -1055,7 +1216,7 @@ git commit -m "feat: add outlet Pre Adjustment page with Aktif and Riwayat tabs"
                         </tr>
                     </thead>
                     <tbody>
-                        {#each active as pa}
+                        {#each paginatedAktif as pa}
                             {@const age = ageLabel(pa.createdAt)}
                             <tr class:bg-warning={age.stale} class:bg-opacity-10={age.stale}>
                                 <td>{outletName(pa.outletId)}</td>
@@ -1070,19 +1231,44 @@ git commit -m "feat: add outlet Pre Adjustment page with Aktif and Riwayat tabs"
                                     </span>
                                 </td>
                                 <td>
-                                    <button class="btn btn-xs btn-warning" on:click={() => openForceClose(pa)}>
-                                        Force Close
-                                    </button>
+                                    <button class="btn btn-xs btn-warning" on:click={() => openForceClose(pa)}>Force Close</button>
                                 </td>
                             </tr>
                         {/each}
                     </tbody>
                 </table>
             </div>
+
+            {#if totalPagesAktif > 1}
+                <div class="flex justify-center items-center gap-1 mt-4">
+                    <button class="btn btn-sm btn-ghost" disabled={currentPageAktif === 1} on:click={() => currentPageAktif--}>‹</button>
+                    {#each pageButtonsAktif as p}
+                        <button class="btn btn-sm {p === currentPageAktif ? 'btn-primary' : 'btn-ghost'}" on:click={() => currentPageAktif = p}>{p}</button>
+                    {/each}
+                    <button class="btn btn-sm btn-ghost" disabled={currentPageAktif === totalPagesAktif} on:click={() => currentPageAktif++}>›</button>
+                </div>
+            {/if}
         {/if}
 
     {:else}
-        {#if history.length === 0}
+        <div class="flex flex-wrap items-center gap-4 mb-4">
+            <input type="text" class="input input-bordered input-sm w-72" placeholder="Cari outlet, produk, alasan..." bind:value={searchRiwayat} />
+            <select class="select select-bordered select-sm" bind:value={statusFilter}>
+                <option value="semua">Semua</option>
+                <option value="reverted">Reverted</option>
+                <option value="force_closed">Force Closed</option>
+                <option value="reconciled">Reconciled</option>
+                <option value="unresolved">Unresolved</option>
+            </select>
+            <select class="select select-bordered select-sm" bind:value={perPageRiwayat}>
+                <option value={10}>10 / halaman</option>
+                <option value={25}>25 / halaman</option>
+                <option value={50}>50 / halaman</option>
+                <option value={100}>100 / halaman</option>
+            </select>
+        </div>
+
+        {#if paginatedRiwayat.length === 0}
             <p class="text-base-content/50 text-sm">Belum ada riwayat Adjustment.</p>
         {:else}
             <div class="overflow-x-auto">
@@ -1095,7 +1281,7 @@ git commit -m "feat: add outlet Pre Adjustment page with Aktif and Riwayat tabs"
                         </tr>
                     </thead>
                     <tbody>
-                        {#each history as pa}
+                        {#each paginatedRiwayat as pa}
                             <tr>
                                 <td>{outletName(pa.outletId)}</td>
                                 <td>{itemName(pa.itemId)}</td>
@@ -1111,14 +1297,14 @@ git commit -m "feat: add outlet Pre Adjustment page with Aktif and Riwayat tabs"
                                 <td>
                                     <span class="badge badge-sm {reconciliationBadgeClass(pa.reconciliationStatus)}">
                                         {reconciliationLabel(pa.reconciliationStatus)}
-                                        {#if pa.reconciliationStatus === 'reconciled' && pa.reconciledItemMasukId}
-                                            · {pa.reconciledItemMasukId}
+                                        {#if pa.reconciliationStatus === 'reconciled' && pa.reconciledPergerakanStokId}
+                                            · {pa.reconciledPergerakanStokId}
                                         {/if}
                                     </span>
                                 </td>
                                 <td>
-                                    {#if transferRef(pa)}
-                                        <span class="badge badge-sm badge-outline">{transferRef(pa)}</span>
+                                    {#if pa.transferId}
+                                        <span class="badge badge-sm badge-outline">{pa.transferId}</span>
                                     {:else}
                                         <span class="text-base-content/40">—</span>
                                     {/if}
@@ -1128,6 +1314,16 @@ git commit -m "feat: add outlet Pre Adjustment page with Aktif and Riwayat tabs"
                     </tbody>
                 </table>
             </div>
+
+            {#if totalPagesRiwayat > 1}
+                <div class="flex justify-center items-center gap-1 mt-4">
+                    <button class="btn btn-sm btn-ghost" disabled={currentPageRiwayat === 1} on:click={() => currentPageRiwayat--}>‹</button>
+                    {#each pageButtonsRiwayat as p}
+                        <button class="btn btn-sm {p === currentPageRiwayat ? 'btn-primary' : 'btn-ghost'}" on:click={() => currentPageRiwayat = p}>{p}</button>
+                    {/each}
+                    <button class="btn btn-sm btn-ghost" disabled={currentPageRiwayat === totalPagesRiwayat} on:click={() => currentPageRiwayat++}>›</button>
+                </div>
+            {/if}
         {/if}
     {/if}
 </div>
@@ -1164,8 +1360,8 @@ git commit -m "feat: add outlet Pre Adjustment page with Aktif and Riwayat tabs"
 - [ ] **Step 2: Commit**
 
 ```bash
-git add src/routes/factory/pre-adjustment/+page.svelte
-git commit -m "feat: add factory Adjustment dashboard with force-close and reconciliation tracking"
+git add src/routes/outlet/adjustment/+page.svelte
+git commit -m "feat: add admin Adjustment dashboard at /outlet/adjustment/ with force-close and reconciliation"
 ```
 
 ---
@@ -1177,24 +1373,25 @@ git commit -m "feat: add factory Adjustment dashboard with force-close and recon
 - Modify: `src/library/components/outlet/retail/CartSection.svelte`
 - Modify: `src/library/components/outlet/retail/Order.svelte` (create stub if absent)
 
-- [ ] **Step 1: Add `getDisplayStock` import and Pre Adjustment quick button to the retail page**
+- [ ] **Step 1: Add Pre Adjustment quick button to the retail page**
 
 In `src/routes/outlet/retail/+page.svelte`, add these imports inside the `<script>` block:
 
 ```typescript
-import { getDisplayStock } from '$lib/mock/pre-adjustments'
+import { getDisplayStock } from '$lib/mock/master-items'
+import { getActivePreAdjustments } from '$lib/mock/pre-adjustments'
 import PreAdjustmentModal from '$lib/components/outlet/pre-adjustment/PreAdjustmentModal.svelte'
 
 let showPreAdjustModal = false
 let preAdjustItemId = ''
 ```
 
-Find the search results list where each item row displays its stock count. Replace every `item.stock` in that section with `getDisplayStock(item.id, $auth.outletId)`. Then, directly after each item row in the list, add the conditional quick-access button:
+Find the search results list. Replace every direct `item.stock` reference in that section with `getDisplayStock(item.id, $auth.outletId)`. After each item row in the list, add the conditional quick-access button:
 
 ```svelte
 {#each searchResults as item}
     {@const displayStock = getDisplayStock(item.id, $auth.outletId)}
-    <!-- ... existing item row markup using displayStock instead of item.stock ... -->
+    <!-- existing item row markup — replace item.stock with displayStock -->
     {#if displayStock === 0}
         <div class="flex justify-end px-2 pb-2">
             <button
@@ -1210,25 +1407,21 @@ Find the search results list where each item row displays its stock count. Repla
 <PreAdjustmentModal
     bind:open={showPreAdjustModal}
     prefilledItemId={preAdjustItemId}
-    onCreated={() => {
-        preAdjustItemId = ''
-        // Re-trigger the existing search to reflect updated display stock:
-        searchResults = searchResults.map(i => ({ ...i }))
-    }}
+    onCreated={() => { preAdjustItemId = ''; searchResults = [...searchResults] }}
 />
 ```
 
 - [ ] **Step 2: Update CartSection to use `getDisplayStock` for qty ceiling**
 
-In `src/library/components/outlet/retail/CartSection.svelte`, add the import and update the qty increase handler:
+In `src/library/components/outlet/retail/CartSection.svelte`, add imports:
 
 ```typescript
-import { getDisplayStock } from '$lib/mock/pre-adjustments'
+import { getDisplayStock } from '$lib/mock/master-items'
 import { get } from 'svelte/store'
 import { auth } from '$lib/stores/auth'
 ```
 
-Find the function that increments a cart item's quantity (named `increaseQty`, `addQty`, or similar). Replace the `item.stock` ceiling with `getDisplayStock`:
+Find the qty increment handler and replace the `item.stock` ceiling:
 
 ```typescript
 function increaseQty(item: RetailCartItem) {
@@ -1236,21 +1429,22 @@ function increaseQty(item: RetailCartItem) {
     const max = getDisplayStock(item.id, session.outletId)
     if (item.qty >= max) return
     item.qty += 1
-    cart.update(c => c)   // trigger reactivity — use whatever store update pattern exists
+    cart.update(c => c)
 }
 ```
 
-Also replace any inline `item.stock` references in the cart row markup (e.g., stock badge) with `getDisplayStock(item.id, $auth.outletId)`.
+Also replace any inline `item.stock` references in cart row markup with `getDisplayStock(item.id, $auth.outletId)`.
 
-- [ ] **Step 3: Update Order.svelte to use `getDisplayStock` per outlet with active-adjustment badge**
+- [ ] **Step 3: Update Order.svelte to show `getDisplayStock` per outlet with active-adjustment badge**
 
 In `src/library/components/outlet/retail/Order.svelte`, add imports:
 
 ```typescript
-import { getDisplayStock, getActivePreAdjustments } from '$lib/mock/pre-adjustments'
+import { getDisplayStock } from '$lib/mock/master-items'
+import { getActivePreAdjustments } from '$lib/mock/pre-adjustments'
 ```
 
-In the multi-outlet stock comparison table, replace raw stock values per outlet column:
+In the multi-outlet stock comparison table, replace raw stock values:
 
 ```svelte
 {#each outlets as outlet}
@@ -1265,7 +1459,7 @@ In the multi-outlet stock comparison table, replace raw stock values per outlet 
 {/each}
 ```
 
-If `Order.svelte` does not exist yet, create a minimal stub at `src/library/components/outlet/retail/Order.svelte` with the imports above and a `<p>Order mode — coming soon</p>` body, so the import in Task 8 doesn't break.
+If `Order.svelte` does not exist yet, create a stub with the imports above and `<p>Order mode — coming soon</p>` body.
 
 - [ ] **Step 4: Commit**
 
@@ -1278,62 +1472,40 @@ git commit -m "feat: integrate getDisplayStock into POS retail page, cart valida
 
 ---
 
-## Task 8: Item Masuk Reconciliation Hook
+## Task 8: Pergerakan Stok Reconciliation Hook
 
 **Files:**
-- Modify: `src/library/mock/item-masuk.ts`
+- Modify: `src/library/mock/pergerakan-stok.ts`
 
-- [ ] **Step 1: Add `checkReconciliation` call to `submitItemMasuk`**
+- [ ] **Step 1: Add `checkReconciliation` call inside `createStokMasuk`**
 
-In `src/library/mock/item-masuk.ts`, add the import and wire the reconciliation call. The hook must be called **after** `item.stock` has been updated — `checkReconciliation` reads the post-masuk stock to determine if the gap is covered.
+In `src/library/mock/pergerakan-stok.ts`, add the import at the top:
 
 ```typescript
 import { checkReconciliation } from '$lib/mock/pre-adjustments'
 ```
 
-Inside `submitItemMasuk()` (or `createItemMasuk()`), after all `item.stock` increments are applied, call `checkReconciliation` once per line item:
+Inside `createStokMasuk()`, after all `logStockMovement()` calls have applied the masuk deltas to `OutletStock.stock`, call `checkReconciliation` once per line item:
 
 ```typescript
-function submitItemMasuk(payload: CreateItemMasukPayload): ItemMasukRecord {
-    // ... existing logic: build the record, push to mock array, increment item.stock per line ...
+export function createStokMasuk(payload: CreateStokMasukPayload, userId: string, outletId: string): PergerakanStok {
+    // ... existing: build PergerakanStok record with IM-XXXXX id ...
+    // ... existing: for each item in payload.items, call logStockMovement() which updates OutletStock.stock ...
 
-    // After all stock updates — trigger reconciliation per line:
+    // After all logStockMovement() calls, trigger reconciliation per line item:
     for (const line of payload.items) {
-        checkReconciliation({
-            id: newRecord.id,
-            outletId: payload.outletId,
-            itemId: line.itemId,
-            qty: line.qty
-        })
+        checkReconciliation(newRecord.id, outletId, line.itemId)
     }
 
     return newRecord
 }
 ```
 
-If `src/library/mock/item-masuk.ts` does not exist yet (Item Masuk not yet implemented), create a stub file so the reconciliation hook is ready when that plan runs:
-
-```typescript
-// src/library/mock/item-masuk.ts
-// Stub — full implementation in Item Masuk plan.
-// checkReconciliation is wired here so the hook is in place from day one.
-
-import { checkReconciliation } from '$lib/mock/pre-adjustments'
-
-interface ItemMasukLine { itemId: string; qty: number }
-interface CreateItemMasukPayload { id: string; outletId: string; items: ItemMasukLine[] }
-
-export function submitItemMasuk(payload: CreateItemMasukPayload): void {
-    // Full implementation to be added in Item Masuk plan.
-    for (const line of payload.items) {
-        checkReconciliation({ id: payload.id, outletId: payload.outletId, itemId: line.itemId, qty: line.qty })
-    }
-}
-```
+`checkReconciliation(stokMasukId, outletId, itemId)` reads `OutletStock.stock` (post-masuk value already updated by `logStockMovement()`). If `stock >= 0`, it marks all pending reverted/force-closed pre-adjustments for that item/outlet as `reconciled` and sets `reconciledPergerakanStokId = stokMasukId`.
 
 - [ ] **Step 2: Commit**
 
 ```bash
-git add src/library/mock/item-masuk.ts
-git commit -m "feat: wire checkReconciliation into Item Masuk submission"
+git add src/library/mock/pergerakan-stok.ts
+git commit -m "feat: wire checkReconciliation into createStokMasuk in pergerakan-stok mock"
 ```
