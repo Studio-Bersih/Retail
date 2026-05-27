@@ -2,6 +2,7 @@ const REQUIRED_ENV_VARS = [
     'DATABASE_URL',
     'REDIS_URL',
     'JWT_SECRET',
+    'PORT',
 ] as const
 
 export function validateEnv(): void {
