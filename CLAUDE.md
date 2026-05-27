@@ -8,12 +8,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Tech Stack
 
-- **SvelteKit** with file-based routing (`src/routes/`)
+- **SvelteKit 2** + **Svelte 5** with file-based routing (`src/routes/`)
+- **Svelte 5 runes** (`$state`, `$derived`, `$effect`, `$props`) — no legacy `$:` reactive declarations or `export let` props
 - **TypeScript** throughout
 - **TailwindCSS + DaisyUI** — dark-first theme, utility classes only
-- **Svelte Stores** for all global state (no external state manager)
+- **Svelte Stores** for global shared state (stores still work in Svelte 5; use `get(store)` in non-Svelte scripts)
 - **Vite** (implicit via SvelteKit)
-- **Prettier** — 4-space indent, `printWidth: 200`
+- **Prettier** — 4-space indent, `printWidth: 200`, `singleAttributePerLine: false` — HTML/Svelte attributes always stay on one line
 
 ## Commands
 
@@ -25,7 +26,7 @@ npm run lint       # Lint
 npm run format     # Format with Prettier
 ```
 
-> No `package.json` exists yet. When initializing, install: `@sveltejs/kit`, `svelte`, `typescript`, `tailwindcss`, `daisyui`, `prettier`, `prettier-plugin-svelte`, `svelte-sonner`.
+> No `package.json` exists yet. When initializing, install the **latest** versions of: `@sveltejs/kit`, `svelte`, `typescript`, `tailwindcss`, `daisyui`, `prettier`, `prettier-plugin-svelte`, `svelte-sonner`. Target SvelteKit 2.x + Svelte 5.x.
 
 ## Architecture
 
@@ -97,6 +98,7 @@ The core of the app. All business logic lives here.
 
 From `docs/coding-styles.md`:
 
+- **Svelte 5 runes required**: `$state()` for reactive variables, `$derived()` for computed values, `$effect()` for side effects, `$props()` for component props — never `$:` labels or `export let`
 - **Pure functions** in `utils/` — isolated inputs, no UI side effects
 - **Literal union types** over `enum` (e.g., `"retail" | "order"`, not `enum Mode`)
 - **Explicit exports** at file bottom (`export { funcA, funcB }`) or inline `export function`
@@ -124,27 +126,31 @@ Every page that renders a list or table **must** include all three of the follow
 
 3. **Pagination** — client-side, derived from the filtered result set. Renders at most **5 page buttons** as a sliding window centered on `currentPage`. Prev / Next buttons flank the window.
 
-The canonical Svelte reactive block (copy verbatim, adjust field names):
+The canonical Svelte 5 reactive block (copy verbatim, adjust field names):
 
 ```svelte
 <script lang="ts">
-  let search = ""
-  let perPage: 10 | 25 | 50 | 100 = 25
-  let currentPage = 1
+    let search = $state("")
+    let perPage: 10 | 25 | 50 | 100 = $state(25)
+    let currentPage = $state(1)
 
-  $: filtered = items.filter(item =>
-    Object.values(item).some(v => String(v).toLowerCase().includes(search.toLowerCase()))
-  )
-  $: totalPages = Math.max(1, Math.ceil(filtered.length / perPage))
-  $: paginated = filtered.slice((currentPage - 1) * perPage, currentPage * perPage)
-  $: if (search !== undefined || perPage) currentPage = 1
+    let filtered = $derived(items.filter(item =>
+        Object.values(item).some(v => String(v).toLowerCase().includes(search.toLowerCase()))
+    ))
+    let totalPages = $derived(Math.max(1, Math.ceil(filtered.length / perPage)))
+    let paginated = $derived(filtered.slice((currentPage - 1) * perPage, currentPage * perPage))
 
-  $: pageButtons = (() => {
-    let start = Math.max(1, currentPage - 2)
-    let end = Math.min(totalPages, start + 4)
-    if (end - start < 4) start = Math.max(1, end - 4)
-    return Array.from({ length: end - start + 1 }, (_, i) => start + i)
-  })()
+    $effect(() => {
+        search; perPage;
+        currentPage = 1
+    })
+
+    let pageButtons = $derived((() => {
+        let start = Math.max(1, currentPage - 2)
+        let end = Math.min(totalPages, start + 4)
+        if (end - start < 4) start = Math.max(1, end - 4)
+        return Array.from({ length: end - start + 1 }, (_, i) => start + i)
+    })())
 </script>
 ```
 
@@ -152,18 +158,13 @@ The canonical toolbar markup (search left, per-page right):
 
 ```svelte
 <div class="flex items-center justify-between gap-4 mb-4">
-  <input
-    type="text"
-    class="input input-bordered input-sm w-72"
-    placeholder="Cari..."
-    bind:value={search}
-  />
-  <select class="select select-bordered select-sm" bind:value={perPage}>
-    <option value={10}>10 / halaman</option>
-    <option value={25}>25 / halaman</option>
-    <option value={50}>50 / halaman</option>
-    <option value={100}>100 / halaman</option>
-  </select>
+    <input type="text" class="input input-bordered input-sm w-72" placeholder="Cari..." bind:value={search} />
+    <select class="select select-bordered select-sm" bind:value={perPage}>
+        <option value={10}>10 / halaman</option>
+        <option value={25}>25 / halaman</option>
+        <option value={50}>50 / halaman</option>
+        <option value={100}>100 / halaman</option>
+    </select>
 </div>
 ```
 
@@ -171,16 +172,13 @@ The canonical pagination markup (placed below the table):
 
 ```svelte
 {#if totalPages > 1}
-  <div class="flex justify-center items-center gap-1 mt-4">
-    <button class="btn btn-sm btn-ghost" disabled={currentPage === 1} on:click={() => currentPage--}>‹</button>
-    {#each pageButtons as p}
-      <button
-        class="btn btn-sm {p === currentPage ? 'btn-primary' : 'btn-ghost'}"
-        on:click={() => currentPage = p}
-      >{p}</button>
-    {/each}
-    <button class="btn btn-sm btn-ghost" disabled={currentPage === totalPages} on:click={() => currentPage++}>›</button>
-  </div>
+    <div class="flex justify-center items-center gap-1 mt-4">
+        <button class="btn btn-sm btn-ghost" disabled={currentPage === 1} onclick={() => currentPage--}>‹</button>
+        {#each pageButtons as p}
+            <button class="btn btn-sm {p === currentPage ? 'btn-primary' : 'btn-ghost'}" onclick={() => currentPage = p}>{p}</button>
+        {/each}
+        <button class="btn btn-sm btn-ghost" disabled={currentPage === totalPages} onclick={() => currentPage++}>›</button>
+    </div>
 {/if}
 ```
 
