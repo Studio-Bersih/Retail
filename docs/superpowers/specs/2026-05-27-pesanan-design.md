@@ -10,6 +10,8 @@
 
 Pesanan is the active order queue for orders created in Order mode from the Retail page. An order lands here immediately after creation and stays until it is either checked out (completed) or cancelled. Completed and cancelled orders move to Riwayat Transaksi.
 
+While an order is active (not yet checked out), cashiers can freely edit any field — items, quantities, pricing, metadata — without admin approval. Once an order is checked out and becomes a completed transaction in Riwayat, modifications require Perbaikan Transaksi (admin approval).
+
 Cashier and Manager see only their outlet's orders. Admin sees all outlets.
 
 ---
@@ -20,9 +22,8 @@ Cashier and Manager see only their outlet's orders. Admin sees all outlets.
 |---|---|
 | Pesanan | A pending order created from Retail → Order mode |
 | DP (Down Payment) | A partial payment added to a Pesanan before full checkout |
-| PTI (Perbaikan Instan) | Instant repair — limited fields, no admin approval |
-| PT (Perbaikan Transaksi) | Full repair — any field, requires admin approval |
-| Locked | Order cannot be edited, cancelled, or checked out while awaiting PT or cancellation approval |
+| Edit | Instant in-place edit of any order field — no approval needed while active |
+| Locked | Order cannot be edited, cancelled, or checked out while awaiting cancellation approval |
 
 ---
 
@@ -74,27 +75,11 @@ interface PesananSnapshot {
 ```typescript
 interface PesananVersion {
     index: number                       // 1, 2, 3...
-    type: "original" | "instant" | "approved"
+    type: "original" | "edit"
     snapshot: PesananSnapshot
     changedFields: string[]
     createdBy: string
     createdAt: string
-    requestId: string | null
-}
-```
-
-### `PesananRepairRequest`
-
-```typescript
-interface PesananRepairRequest {
-    id: string
-    pesananId: string
-    status: "pending" | "rejected" | "deleted"
-    proposedSnapshot: PesananSnapshot
-    submittedBy: string
-    submittedAt: string
-    rejectionReason: string | null
-    revisions: number
 }
 ```
 
@@ -126,7 +111,7 @@ interface PesananPayment {
 ### `Pesanan`
 
 ```typescript
-type PesananStatus = "active" | "awaiting_pt" | "awaiting_cancellation" | "completed" | "cancelled"
+type PesananStatus = "active" | "awaiting_cancellation" | "completed" | "cancelled"
 
 interface Pesanan {
     id: string                          // "PSN-00001" — 5-digit zero-padded
@@ -135,8 +120,7 @@ interface Pesanan {
     versions: PesananVersion[]
     payments: PesananPayment[]          // cumulative DP log
     amountPaid: number                  // sum of all payments
-    totalAmount: number                 // computed from current snapshot items at creation
-    pendingRequest: PesananRepairRequest | null
+    totalAmount: number                 // computed from current snapshot items
     cancellationRequest: PesananCancellationRequest | null
     createdAt: string
     completedAt: string | null
@@ -144,15 +128,7 @@ interface Pesanan {
 }
 ```
 
-`totalAmount` is recomputed on PT approval if item quantities change.
-
-### PTI-Allowed Fields
-
-```typescript
-type PesananPTIField = "orderMeta" | "memberId"
-```
-
-PTI for Pesanan only allows changing `orderMeta` (pickup date, delivery type, WhatsApp, hour) and `memberId`. All other fields require a full PT request.
+`totalAmount` is recomputed on every edit if item quantities or prices change.
 
 ---
 
@@ -161,9 +137,9 @@ PTI for Pesanan only allows changing `orderMeta` (pickup date, delivery type, Wh
 | Route | File | Access |
 |---|---|---|
 | `/outlet/pesanan/` | `src/routes/outlet/pesanan/+page.svelte` | All roles |
-| `/outlet/pesanan/repair` | `src/routes/outlet/pesanan/repair/+page.svelte` | Admin only |
+| `/outlet/pesanan/cancellation` | `src/routes/outlet/pesanan/cancellation/+page.svelte` | Admin only |
 
-Non-admin accessing `/outlet/pesanan/repair` is redirected to `/outlet/pesanan/`.
+Non-admin accessing `/outlet/pesanan/cancellation` is redirected to `/outlet/pesanan/`.
 
 ---
 
@@ -188,15 +164,13 @@ Admin view adds an **Outlet** column before Ref ID.
 | Status | Badge |
 |---|---|
 | `active` | green "Aktif" |
-| `awaiting_pt` | amber "⏳ Menunggu PT" |
 | `awaiting_cancellation` | amber "⏳ Menunggu Batal" |
 
 ### Action Buttons per Status
 
 | Status | Actions |
 |---|---|
-| `active` | Checkout · Add DP · PTI · PT · Batalkan |
-| `awaiting_pt` | — (locked, badge only) |
+| `active` | Checkout · Add DP · Edit · Batalkan |
 | `awaiting_cancellation` | — (locked, badge only) |
 
 ### Pagination
@@ -230,29 +204,13 @@ On confirm:
 
 ---
 
-## PTI — Perbaikan Instan
+## Edit — Instant Order Edit
 
-Opens a small modal with only PTI-allowed fields:
+Opens a full edit modal pre-filled with the current snapshot. All fields are editable: items (add, remove, change qty), freeItems, additionalCosts, additionalCut, transactionType, notes, orderMeta, memberId.
 
-- `orderMeta.orderDate` — date picker
-- `orderMeta.hour` — time picker
-- `orderMeta.deliveryType` — dropdown (Delivery / Ambil di Outlet)
-- `orderMeta.whatsapp` — text input
-- `memberId` — member search (same as Retail member picker)
+No admin approval required — changes apply immediately because the order has not been checked out yet. Stock is not affected until checkout.
 
-On save: `applyInstantRepair(id, changes, userId)` — creates a new `"instant"` version immediately. No admin approval. Order stays `"active"`.
-
----
-
-## PT — Perbaikan Transaksi
-
-Opens a full edit modal pre-filled with the current snapshot. All fields are editable: items, freeItems, additionalCosts, additionalCut, transactionType, notes, orderMeta, memberId.
-
-If a previous PT was rejected, a rejection banner is shown with the reason.
-
-On submit: `submitRepairRequest(id, proposedSnapshot, userId)` — `status` → `"awaiting_pt"`, order locked.
-
-On revision (after rejection): `reviseRepairRequest(id, proposedSnapshot, userId)`.
+On save: `editPesanan(id, newSnapshot, userId)` — creates a new `"edit"` version, recomputes `totalAmount`, order stays `"active"`.
 
 ---
 
@@ -262,29 +220,15 @@ Clicking "Batalkan" opens a confirmation dialog with a required reason input.
 
 On confirm: `requestCancellation(id, userId, reason)` — `status` → `"awaiting_cancellation"`, order locked.
 
+Cancellation requires admin approval because it is an intentional business decision to void a pending commitment.
+
 ---
 
-## Admin Repair Page — `/outlet/pesanan/repair`
+## Admin Cancellation Page — `/outlet/pesanan/cancellation`
 
-Two tabs: **PT Pending** (default) · **Pembatalan Pending**
+Two tabs: **Menunggu** (default) · **Selesai**
 
-A third tab: **Selesai** — resolved PT and cancellation requests across all outlets.
-
-### PT Pending Tab
-
-Columns: Outlet · Ref ID · Diminta Oleh · Tgl Diminta · Revisi ke-N · Review
-
-Inline review panel on row click:
-- Current snapshot vs proposed — field-level diff (same pattern as Pergerakan Stok PT)
-- Changed fields highlighted
-
-Actions: **Setujui** · **Tolak** (requires reason)
-
-On Setujui: `approveRepairRequest(id, adminId)` — new `"approved"` version committed, `totalAmount` recomputed if items changed, `status` → `"active"`.
-
-On Tolak: `rejectRepairRequest(id, reason, adminId)` — `status` → `"active"`, `pendingRequest.status` → `"rejected"`.
-
-### Pembatalan Pending Tab
+### Menunggu Tab
 
 Columns: Outlet · Ref ID · Diminta Oleh · Alasan · Tgl Diminta · Aksi
 
@@ -294,6 +238,10 @@ On Setujui: `approveCancellation(id, adminId)` — `status` → `"cancelled"`, `
 
 On Tolak: `rejectCancellation(id, reason, adminId)` — `status` → `"active"`, cancellationRequest cleared.
 
+### Selesai Tab
+
+Shows all resolved cancellation requests (approved and rejected) across all outlets. Read-only.
+
 ---
 
 ## Mock Functions (`mock/pesanan.ts`)
@@ -302,7 +250,6 @@ On Tolak: `rejectCancellation(id, reason, adminId)` — `status` → `"active"`,
 // Queries
 getPesananList(outletId?: string): Pesanan[]         // no arg = all outlets
 getPesananById(id: string): Pesanan | undefined
-getPendingRepairRequests(): PesananRepairRequest[]
 getPendingCancellationRequests(): PesananCancellationRequest[]
 
 // Creation (called from Order mode in Retail)
@@ -314,14 +261,8 @@ addPayment(id: string, type: string, amount: number): void
 // Checkout
 checkoutPesanan(id: string, payments: PesananPayment[], userId: string): void
 
-// PTI — no approval, instant version
-applyInstantRepair(id: string, changes: Partial<Pick<PesananSnapshot, PesananPTIField>>, userId: string): void
-
-// PT — admin approval required
-submitRepairRequest(id: string, proposedSnapshot: PesananSnapshot, userId: string): void
-reviseRepairRequest(id: string, proposedSnapshot: PesananSnapshot, userId: string): void
-approveRepairRequest(id: string, adminId: string): void
-rejectRepairRequest(id: string, reason: string, adminId: string): void
+// Edit — instant, all fields, no approval
+editPesanan(id: string, newSnapshot: PesananSnapshot, userId: string): void
 
 // Cancellation — admin approval required
 requestCancellation(id: string, userId: string, reason: string): void
@@ -337,12 +278,12 @@ ID format: `PSN-` prefix, 5-digit zero-padded counter.
 
 | File | Responsibility |
 |---|---|
-| `src/routes/outlet/pesanan/+page.svelte` | Order list, Add DP modal, PTI modal, PT modal, cancellation dialog — all inline |
-| `src/routes/outlet/pesanan/repair/+page.svelte` | Admin PT + cancellation approval queue |
+| `src/routes/outlet/pesanan/+page.svelte` | Order list, Add DP modal, Edit modal, cancellation dialog — all inline |
+| `src/routes/outlet/pesanan/cancellation/+page.svelte` | Admin cancellation approval queue |
 | `src/library/types/Pesanan.ts` | All TypeScript interfaces |
 | `src/library/mock/pesanan.ts` | In-memory store + all CRUD functions |
 
-All modals (Add DP, PTI, PT, cancellation) are inline in `+page.svelte` — no separate component files needed.
+All modals (Add DP, Edit, cancellation) are inline in `+page.svelte` — no separate component files needed.
 
 ---
 
@@ -352,7 +293,7 @@ Four seed records:
 
 1. **PSN-00001** — `active`, no payments yet. 2 items. Delivery. Member attached.
 2. **PSN-00002** — `active`, partial DP paid (50%). 3 items. Pickup.
-3. **PSN-00003** — `awaiting_pt`, pending PT request (item qty change). 1 item.
+3. **PSN-00003** — `active`, edited once (version 2). Item qty changed. Pickup.
 4. **PSN-00004** — `awaiting_cancellation`, pending cancellation with reason.
 
 ---
@@ -370,6 +311,6 @@ When a cashier submits an order in Order mode from `/outlet/retail/`, the Retail
 - Order expiry / automatic cancellation after N days
 - Partial item fulfilment (all items fulfilled together at checkout)
 - Customer-facing order status tracking
-- Push notifications for PT approval or cancellation approval
+- Push notifications for cancellation approval
 - Sales staff assignment (no Sales feature yet)
 - Receipt printing from Pesanan (handled by Riwayat)
