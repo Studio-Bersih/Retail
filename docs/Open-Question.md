@@ -13,23 +13,18 @@ Format per entry:
 ## Riwayat Transaksi
 
 ### Q1 — Scope of transaction sources
-**Status:** Open
+**Status:** Closed
 **Raised by:** `2026-05-27-pesanan-design.md`
 **Question:** Riwayat Transaksi is supposed to log all completed transactions. Which sources feed into it?
-- Retail mode (direct checkout) — assumed yes
-- Pesanan (completed via Pesanan checkout) — assumed yes
-- Any others? Konversi? Rencana Produksi?
-
-Does Riwayat show a unified list of all sources with a "type" column, or are they separated into tabs?
+**Resolution:** Retail and Pesanan only — strictly sales transactions. Separated into two tabs (not a unified list). Resolved 2026-05-27.
 
 ---
 
 ### Q2 — Perbaikan Transaksi on Riwayat entries
-**Status:** Open
+**Status:** Closed
 **Raised by:** `2026-05-03-perbaikan-transaksi.md`, confirmed by user 2026-05-27
-**Question:** PT (admin approval required) applies to completed transactions in Riwayat. The existing PT plan was written against Retail transactions. When a Pesanan-sourced transaction lands in Riwayat after checkout, does it get the same PT treatment? Is the snapshot shape identical (PesananSnapshot vs RetailPayload)?
-
-The two snapshots are similar but not identical — Pesanan has `memberId` at top level, Retail embeds member differently. Clarify before Riwayat design begins.
+**Question:** PT on completed transactions — does it work the same for Retail and Pesanan sources?
+**Resolution:** Yes, same PT flow for both. Riwayat uses a discriminated union (`RiwayatSnapshot = RetailSnapshot | PesananTransactionSnapshot`) with a `source` field. Both get full-field PT with admin approval. No PTI in Riwayat for either source. Resolved 2026-05-27 via Riwayat design spec.
 
 ---
 
