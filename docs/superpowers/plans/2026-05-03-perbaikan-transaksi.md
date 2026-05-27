@@ -57,6 +57,7 @@ If a PTI edit is made after a PT request is submitted (both affect overlapping l
 
 ```typescript
 // src/library/types/Repair.ts
+import type { KuponCartMutation } from './Kupon'
 
 export interface TransactionSnapshot {
   id: string
@@ -67,7 +68,7 @@ export interface TransactionSnapshot {
   items: Array<{ id: string; name: string; sku: string; barcode: string; price: number; qty: number; stock: number; isFree: boolean }>
   freeItems: Array<{ id: string; name: string; sku: string; barcode: string; qty: number; stock: number; isFree: true }>
   additionalCosts: { packaging: number; modification: number; transport: number; other: number }
-  additionalCut: { fixedAmount: number; percentage: number }
+  kupon: { kode: string; nilaiPotongan: number; cartMutations: KuponCartMutation[]; authNip: string | null } | null
   payments: Array<{ type: string; amount: number }>
   isPiutang: boolean
   piutangAmount: number
@@ -197,7 +198,7 @@ const base: TransactionSnapshot = {
   items: [{ id: "SKU-001", name: "Krim Wajah SPF50", sku: "SKU-001", barcode: "8991234000012", price: 50000, qty: 2, stock: 10, isFree: false }],
   freeItems: [],
   additionalCosts: { packaging: 5000, transport: 10000, modification: 0, other: 0 },
-  additionalCut: { fixedAmount: 0, percentage: 0 },
+  kupon: null,
   payments: [{ type: "cash", amount: 115000 }],
   isPiutang: false,
   piutangAmount: 0,
@@ -390,7 +391,7 @@ git commit -m "feat: add Perbaikan Transaksi types, diff utility, and mock data"
     freeItems: "Item Gratis",
     payments: "Metode Pembayaran",
     additionalCosts: "Biaya Tambahan",
-    additionalCut: "Potongan",
+    kupon: "Kupon",
     notes: "Catatan",
     transactionType: "Tipe Transaksi",
     orderMeta: "Info Order",
@@ -857,7 +858,7 @@ export { submitRepairRequest, reviseRepairRequest, deleteRepairRequest }
   let memberId = prefill.memberId
   let payments = JSON.parse(JSON.stringify(prefill.payments)) as TransactionSnapshot["payments"]
   let additionalCosts = { ...prefill.additionalCosts }
-  let additionalCut = { ...prefill.additionalCut }
+  let kupon = prefill.kupon  // managed by CouponPanel — see kupon plan Task 13
   let isPiutang = prefill.isPiutang
   let piutangAmount = prefill.piutangAmount
   let orderMeta = prefill.orderMeta ? { ...prefill.orderMeta } : null
@@ -870,7 +871,7 @@ export { submitRepairRequest, reviseRepairRequest, deleteRepairRequest }
     return {
       ...current,
       items, notes, transactionType, memberId, payments,
-      additionalCosts, additionalCut, isPiutang, piutangAmount, orderMeta
+      additionalCosts, kupon, isPiutang, piutangAmount, orderMeta
     }
   }
 

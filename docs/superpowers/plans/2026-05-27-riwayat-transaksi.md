@@ -50,6 +50,7 @@ src/library/mock/pesanan.ts                   — call createRiwayatEntry in che
 
 ```typescript
 // src/library/types/Riwayat.ts
+import type { KuponCartMutation } from './Kupon'
 
 export interface RetailSnapshot {
     source: 'retail'
@@ -76,7 +77,7 @@ export interface RetailSnapshot {
         isFree: true
     }>
     additionalCosts: { packaging: number; modification: number; transport: number; other: number }
-    additionalCut: { fixedAmount: number; percentage: number }
+    kupon: { kode: string; nilaiPotongan: number; cartMutations: KuponCartMutation[]; authNip: string | null } | null
     payments: Array<{ type: string; amount: number }>
     transactionType: string
     notes: string
@@ -119,7 +120,7 @@ export interface PesananTransactionSnapshot {
         isFree: true
     }>
     additionalCosts: { packaging: number; modification: number; transport: number; other: number }
-    additionalCut: { fixedAmount: number; percentage: number }
+    kupon: { kode: string; nilaiPotongan: number; cartMutations: KuponCartMutation[]; authNip: string | null } | null
     payments: Array<{ type: string; amount: number }>
     transactionType: string
     notes: string
@@ -218,7 +219,7 @@ const baseRetailSnap: RetailSnapshot = {
     items: [{ id: 'item-001', name: 'Kemeja', sku: 'KMJ-001', barcode: '8991234000011', price: 100000, qty: 2, stock: 10, isFree: false }],
     freeItems: [],
     additionalCosts: { packaging: 0, modification: 0, transport: 0, other: 0 },
-    additionalCut: { fixedAmount: 0, percentage: 0 },
+    kupon: null,
     payments: [{ type: 'cash', amount: 200000 }],
     transactionType: 'Walk-In',
     notes: '',
@@ -238,7 +239,7 @@ const basePesananSnap: PesananTransactionSnapshot = {
     items: [{ id: 'item-002', name: 'Celana', sku: 'CLN-001', barcode: '8991234000022', price: 150000, qty: 1, stock: 5, isFree: false }],
     freeItems: [],
     additionalCosts: { packaging: 0, modification: 0, transport: 0, other: 0 },
-    additionalCut: { fixedAmount: 0, percentage: 0 },
+    kupon: null,
     payments: [{ type: 'cash', amount: 150000 }],
     transactionType: 'Walk-In',
     notes: '',
@@ -456,8 +457,8 @@ import { logStockMovement } from './master-items'
 function computeTotal(snap: RiwayatSnapshot): number {
     const itemTotal = snap.items.reduce((s, i) => s + i.price * i.qty, 0)
     const costs = snap.additionalCosts.packaging + snap.additionalCosts.modification + snap.additionalCosts.transport + snap.additionalCosts.other
-    const cutPct = Math.round(itemTotal * snap.additionalCut.percentage / 100)
-    return itemTotal + costs - snap.additionalCut.fixedAmount - cutPct
+    const kuponDiscount = snap.kupon ? snap.kupon.nilaiPotongan : 0
+    return itemTotal + costs - kuponDiscount
 }
 
 function getChangedFields(before: RiwayatSnapshot, after: RiwayatSnapshot): string[] {
@@ -476,7 +477,7 @@ const retailSnap1: RetailSnapshot = {
     ],
     freeItems: [],
     additionalCosts: { packaging: 5000, modification: 0, transport: 0, other: 0 },
-    additionalCut: { fixedAmount: 0, percentage: 0 },
+    kupon: null,
     payments: [{ type: 'cash', amount: 505000 }],
     transactionType: 'Walk-In', notes: '',
     orderMeta: null, pointsRedeemed: 0, voucherId: null, isPiutang: false, piutangAmount: 0,
@@ -487,7 +488,7 @@ const retailSnap2: RetailSnapshot = {
     items: [{ id: 'item-003', name: 'Jaket Denim', sku: 'JKT-001', barcode: '8991234000033', price: 350000, qty: 1, stock: 8, isFree: false }],
     freeItems: [],
     additionalCosts: { packaging: 0, modification: 0, transport: 0, other: 0 },
-    additionalCut: { fixedAmount: 0, percentage: 0 },
+    kupon: null,
     payments: [{ type: 'cash', amount: 350000 }],
     transactionType: 'Walk-In', notes: '',
     orderMeta: null, pointsRedeemed: 0, voucherId: null, isPiutang: false, piutangAmount: 0,
@@ -508,7 +509,7 @@ const retailSnap3v1: RetailSnapshot = {
     ],
     freeItems: [],
     additionalCosts: { packaging: 10000, modification: 0, transport: 0, other: 0 },
-    additionalCut: { fixedAmount: 0, percentage: 0 },
+    kupon: null,
     payments: [{ type: 'emoney', amount: 565000 }],
     transactionType: 'Walk-In', notes: 'Harga salah dicatat',
     orderMeta: null, pointsRedeemed: 0, voucherId: null, isPiutang: false, piutangAmount: 0,
@@ -534,7 +535,7 @@ const pesananSnap1: PesananTransactionSnapshot = {
     ],
     freeItems: [],
     additionalCosts: { packaging: 10000, modification: 0, transport: 15000, other: 0 },
-    additionalCut: { fixedAmount: 0, percentage: 0 },
+    kupon: null,
     payments: [
         { type: 'cash', amount: 237500 },
         { type: 'cash', amount: 237500 },
@@ -549,7 +550,7 @@ const pesananSnap2: PesananTransactionSnapshot = {
     items: [{ id: 'item-007', name: 'Topi Baseball', sku: 'TOP-001', barcode: '8991234000077', price: 95000, qty: 2, stock: 25, isFree: false }],
     freeItems: [],
     additionalCosts: { packaging: 0, modification: 0, transport: 0, other: 0 },
-    additionalCut: { fixedAmount: 0, percentage: 0 },
+    kupon: null,
     payments: [{ type: 'cash', amount: 190000 }],
     transactionType: 'Walk-In', notes: '',
     orderMeta: { orderDate: '2026-05-26', whatsapp: '089876543210', branchId: 'branch-1', hour: '10:00', deliveryType: 'pickup' },
@@ -1063,8 +1064,8 @@ Create `src/routes/outlet/riwayat/+page.svelte`:
                     <div class="flex justify-between"><span>Transport</span><span>{formatRp(snap.additionalCosts.transport)}</span></div>
                     <div class="flex justify-between"><span>Lainnya</span><span>{formatRp(snap.additionalCosts.other)}</span></div>
                 {/if}
-                {#if snap.additionalCut.fixedAmount || snap.additionalCut.percentage}
-                    <div class="flex justify-between text-error"><span>Potongan</span><span>-{formatRp(snap.additionalCut.fixedAmount)}</span></div>
+                {#if snap.kupon}
+                    <div class="flex justify-between text-success"><span>Kupon {snap.kupon.kode}</span><span>-{formatRp(snap.kupon.nilaiPotongan)}</span></div>
                 {/if}
                 <div class="flex justify-between font-bold border-t border-base-300 pt-1">
                     <span>Total</span><span>{formatRp(selected.totalAmount)}</span>
@@ -1126,7 +1127,7 @@ Create `src/routes/outlet/riwayat/+page.svelte`:
             <div class="space-y-1 text-sm">
                 {#if snap.additionalCosts.packaging}<div class="flex justify-between"><span>Packaging</span><span>{formatRp(snap.additionalCosts.packaging)}</span></div>{/if}
                 {#if snap.additionalCosts.transport}<div class="flex justify-between"><span>Transport</span><span>{formatRp(snap.additionalCosts.transport)}</span></div>{/if}
-                {#if snap.additionalCut.fixedAmount}<div class="flex justify-between text-error"><span>Potongan</span><span>-{formatRp(snap.additionalCut.fixedAmount)}</span></div>{/if}
+                {#if snap.kupon}<div class="flex justify-between text-success"><span>Kupon {snap.kupon.kode}</span><span>-{formatRp(snap.kupon.nilaiPotongan)}</span></div>{/if}
                 <div class="flex justify-between font-bold text-base border-t border-base-300 pt-1"><span>TOTAL</span><span>{formatRp(selected.totalAmount)}</span></div>
                 {#each snap.payments as p}
                     <div class="flex justify-between"><span>{p.type}</span><span>{formatRp(p.amount)}</span></div>
@@ -1265,13 +1266,14 @@ Create `src/routes/outlet/riwayat/+page.svelte`:
                 </div>
             </section>
 
-            <!-- Potongan -->
+            <!-- Kupon — managed by CouponPanel (kupon plan Task 13); ptSnapshot.kupon updated via onApply/onRemove -->
             <section class="mb-5">
-                <h4 class="font-semibold mb-2">Potongan</h4>
-                <div class="grid grid-cols-2 gap-2">
-                    <div class="form-control"><label class="label"><span class="label-text text-xs">Nominal (Rp)</span></label><input type="number" class="input input-sm input-bordered" bind:value={ptSnapshot.additionalCut.fixedAmount} min={0} /></div>
-                    <div class="form-control"><label class="label"><span class="label-text text-xs">Persentase (%)</span></label><input type="number" class="input input-sm input-bordered" bind:value={ptSnapshot.additionalCut.percentage} min={0} max={100} /></div>
-                </div>
+                <h4 class="font-semibold mb-2">Kupon</h4>
+                {#if ptSnapshot.kupon}
+                    <div class="text-sm">Kupon aktif: <span class="font-mono font-bold text-primary">{ptSnapshot.kupon.kode}</span> — potongan {formatRp(ptSnapshot.kupon.nilaiPotongan)}</div>
+                {:else}
+                    <div class="text-sm text-base-content/50">Tidak ada kupon</div>
+                {/if}
             </section>
 
             <!-- Tipe & Catatan -->
@@ -1690,10 +1692,12 @@ const retailSnapshot: RetailSnapshot = {
         transport: $cart.transport ?? 0,
         other: $cart.other ?? 0,
     },
-    additionalCut: {
-        fixedAmount: $cart.fixedDiscount ?? 0,
-        percentage: $cart.percentDiscount ?? 0,
-    },
+    kupon: appliedKupon ? {
+        kode: appliedKupon.kode,
+        nilaiPotongan: kuponDiscount,
+        cartMutations: appliedKupon.effects.cartMutations,
+        authNip: appliedKupon.authNip
+    } : null,
     payments: $cart.paymentMethods?.map((p: { method: string; amount: number }) => ({ type: p.method, amount: p.amount })) ?? [],
     transactionType: $cart.transactionType ?? 'Walk-In',
     notes: $cart.notes ?? '',
@@ -1758,7 +1762,7 @@ export function checkoutPesanan(id: string, newPayments: PesananPayment[], userI
         items: snap.items,
         freeItems: snap.freeItems,
         additionalCosts: snap.additionalCosts,
-        additionalCut: snap.additionalCut,
+        kupon: snap.kupon,
         payments: pesanan.payments.map(p => ({ type: p.type, amount: p.amount })),
         transactionType: snap.transactionType,
         notes: snap.notes,
