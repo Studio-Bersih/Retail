@@ -116,6 +116,15 @@ Format per entry:
 
 ---
 
+## Perbaikan Transaksi Dashboard
+
+### Q15 — "Revisi" deep-link target for rejected requests
+**Status:** Open
+**Raised by:** `2026-05-27-perbaikan-transaksi-dashboard-design.md`
+**Question:** The detail page shows a "Revisi" button when a non-admin user's PT request is rejected. Clicking it should take the user back to the source feature to resubmit. None of the source feature specs define a deep-link that pre-populates the PT edit form with the rejected snapshot. Should the "Revisi" button simply navigate to the source feature's list page (user finds their record and clicks PT again), or should the dashboard pass state (e.g., via query param or a store) to pre-open the PT form? Resolve when the PT dashboard plan is executed.
+
+---
+
 ## General
 
 ### Q11 — Vitest setup
