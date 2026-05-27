@@ -118,6 +118,13 @@ Format per entry:
 
 ## Perbaikan Transaksi Dashboard
 
+### Q16 — Aggregator source mock function name contracts
+**Status:** Open
+**Raised by:** `2026-05-27-perbaikan-transaksi-dashboard.md` (Task 2)
+**Question:** The PT aggregator mock (`mock/perbaikan-transaksi.ts`) assumes specific function names in each source mock (e.g., `getRepairRequestById`, `getRiwayatById`, `approveRepairRequest` in riwayat.ts; `getKasRepairRequestById`, `getKasById` in kas.ts; `getShiftRepairRequestById`, `getShiftById`, `approveShiftRepairRequest` in kasir.ts — full list in the plan's "Source Mock Contracts" section). If any source mock uses different names, the aggregator will silently return nulls/empty arrays via its try/catch fallback. Verify all names match when source plans are executed.
+
+---
+
 ### Q15 — "Revisi" deep-link target for rejected requests
 **Status:** Open
 **Raised by:** `2026-05-27-perbaikan-transaksi-dashboard-design.md`
