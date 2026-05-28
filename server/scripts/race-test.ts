@@ -336,6 +336,68 @@ async function runCouponRace(): Promise<string> {
     return 'FAIL ❌'
 }
 
+// ── Phase 3: Kasir shift collision ────────────────────────────────────────
+async function runShiftRace(): Promise<string> {
+    phaseHeader(3, 'Kasir Shift Collision')
+    console.log(`  Concurrency: ${N} workers | Outlet: kasir1 | Date: today`)
+
+    // Probe
+    const probe = await apiFetch('/api/kasir/open', {
+        method: 'POST', body: {}, token: tokenPool[0].token
+    })
+    if (probe.status === 404) {
+        console.log(`  ${c.yellow}SKIPPED ⚠️${c.reset}  /api/kasir/open not yet built`)
+        return 'SKIPPED'
+    }
+
+    // Seed: delete any existing shift for kasir1's outlet + today
+    const today = new Date().toISOString().slice(0, 10)
+    await db.delete(schema.shifts).where(eq(schema.shifts.outletId, TEST_OUTLET_ID))
+
+    // Fire N concurrent open-shift requests
+    const payload = { outletId: TEST_OUTLET_ID, date: today, openingBalance: 0 }
+
+    console.log(`  Firing ${N} concurrent requests...`)
+    const start = performance.now()
+    const results = await Promise.allSettled(
+        Array.from({ length: N }, (_, idx) =>
+            apiFetch('/api/kasir/open', {
+                method: 'POST', body: payload,
+                token: roundRobin(idx).token, timeoutMs: 15000
+            }).then(async res => ({ status: res.status, ms: Math.round(performance.now() - start) }))
+        )
+    )
+    const elapsed = Math.round(performance.now() - start)
+
+    const responses = results
+        .filter((r): r is PromiseFulfilledResult<{ status: number; ms: number }> => r.status === 'fulfilled')
+        .map(r => r.value)
+
+    const successes = responses.filter(r => r.status === 201).length
+    const networkErrors = results.filter((r): r is PromiseRejectedResult => r.status === 'rejected').length
+
+    // Verify: count shift rows for outlet + today
+    const shiftRows = await db.select().from(schema.shifts)
+        .where(eq(schema.shifts.outletId, TEST_OUTLET_ID))
+    const shiftCount = shiftRows.length
+
+    console.log(`  Elapsed:     ${elapsed}ms`)
+    console.log(`  Successes:   ${successes} (expected: 1)`)
+    console.log(`  Network err: ${networkErrors}`)
+    console.log(`  Shifts in DB: ${shiftCount} (expected: 1)`)
+
+    if (shiftCount > 1 || successes > 1) {
+        console.log(`  ${c.red}${c.bold}RACE DETECTED 🔥${c.reset}  ${shiftCount} duplicate shifts created`)
+        return 'RACE DETECTED 🔥'
+    }
+    if (successes === 1 && shiftCount === 1) {
+        console.log(`  ${c.green}PASS ✅${c.reset}`)
+        return 'PASS ✅'
+    }
+    console.log(`  ${c.red}FAIL ❌${c.reset}  Unexpected result`)
+    return 'FAIL ❌'
+}
+
 async function main() {
     console.log(`\n${c.bold}${c.orange}Studio Bersih — Race Condition Tester${c.reset}`)
     console.log(`${c.dim}Server: ${BASE_URL}${c.reset}`)
@@ -344,6 +406,7 @@ async function main() {
     try {
         if (PHASE === 'all' || PHASE === 'stock')  await runStockRace()
         if (PHASE === 'all' || PHASE === 'coupon') await runCouponRace()
+        if (PHASE === 'all' || PHASE === 'shift')  await runShiftRace()
     } finally {
         await cleanupTestData()
         await queryClient.end()
