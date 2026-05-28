@@ -6,6 +6,7 @@ import { getItemsHandler, getItemByIdHandler, getItemStockHandler } from '../con
 import { getMembersHandler, getMemberByIdHandler } from '../controllers/members.controller'
 import { getPromosHandler } from '../controllers/promos.controller'
 import { createTransactionHandler, getTransactionsHandler, getTransactionByIdHandler } from '../controllers/transactions.controller'
+import { getCurrentShiftHandler, openShiftHandler, closeShiftHandler } from '../controllers/kasirHarian.controller'
 import { rateLimiterHook } from '../hooks/rateLimiter.hook'
 import { authGuard } from '../hooks/auth.hook'
 import { versionHook } from '../hooks/version.hook'
@@ -106,3 +107,21 @@ export const routes = new Elysia({ prefix: '/api' })
         })
     })
     .get('/transactions/:transactionId', getTransactionByIdHandler)
+
+    // ── Kasir Harian ─────────────────────────────────────────────────────
+    .get('/shifts/current', getCurrentShiftHandler)
+    .post('/shifts/open', openShiftHandler, {
+        body: t.Object({
+            openingBalance: t.Number(),
+            date:           t.String({ pattern: '^\\d{4}-\\d{2}-\\d{2}$' })
+        })
+    })
+    .post('/shifts/close', closeShiftHandler, {
+        body: t.Object({
+            shiftId: t.String(),
+            counts:  t.Array(t.Object({
+                paymentMethod: t.String(),
+                actualAmount:  t.Number()
+            }))
+        })
+    })
