@@ -171,3 +171,55 @@ describe('POST /api/transactions', () => {
         expect(response.status).toBe(401)
     })
 })
+
+describe('GET /api/transactions', () => {
+    it('returns 200 with paginated data shape', async () => {
+        const response = await app.handle(
+            new Request(`http://localhost/api/transactions?outletId=${testOutletId}`, { headers: authHeaders })
+        )
+        const responseData = await response.json() as { data: unknown[]; meta: { page: number; total: number } }
+        expect(response.status).toBe(200)
+        expect(Array.isArray(responseData.data)).toBe(true)
+        expect(typeof responseData.meta.page).toBe('number')
+        expect(typeof responseData.meta.total).toBe('number')
+    })
+
+    it('includes the seeded transaction in the result', async () => {
+        const response = await app.handle(
+            new Request(`http://localhost/api/transactions?outletId=${testOutletId}`, { headers: authHeaders })
+        )
+        const responseData = await response.json() as { data: Array<{ id: string }> }
+        expect(response.status).toBe(200)
+        const found = responseData.data.find(tx => tx.id === createdTxId)
+        expect(found).toBeDefined()
+    })
+
+    it('returns 401 without token', async () => {
+        const response = await app.handle(
+            new Request('http://localhost/api/transactions', { headers: BASE_HEADERS })
+        )
+        expect(response.status).toBe(401)
+    })
+})
+
+describe('GET /api/transactions/:transactionId', () => {
+    it('returns 200 with transaction, items, and payments for a valid id', async () => {
+        const response = await app.handle(
+            new Request(`http://localhost/api/transactions/${createdTxId}`, { headers: authHeaders })
+        )
+        const responseData = await response.json() as { id: string; items: unknown[]; payments: unknown[] }
+        expect(response.status).toBe(200)
+        expect(responseData.id).toBe(createdTxId)
+        expect(Array.isArray(responseData.items)).toBe(true)
+        expect(Array.isArray(responseData.payments)).toBe(true)
+        expect(responseData.items.length).toBeGreaterThan(0)
+        expect(responseData.payments.length).toBeGreaterThan(0)
+    })
+
+    it('returns 404 for unknown transaction id', async () => {
+        const response = await app.handle(
+            new Request('http://localhost/api/transactions/nonexistent-id', { headers: authHeaders })
+        )
+        expect(response.status).toBe(404)
+    })
+})
