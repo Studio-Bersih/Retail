@@ -121,7 +121,25 @@ $: filtered = items.filter(item =>
 
 ---
 
-## 6. Embracing Powerful Native APIs vs Third-Party Packages
+## 6. Control Flow Style
+
+- **No one-liner `if` bodies.** Every `if` (and `else`) block must use curly braces with the body on its own line, even for single-statement returns or throws. This applies to both TypeScript and Svelte files.
+
+```typescript
+// ❌ Never
+if (!foundUser) return null
+if (role === 'cashier') return status(403, { message: Errors.FORBIDDEN })
+
+// ✅ Always
+if (!foundUser) {
+    return null
+}
+if (role === 'cashier') {
+    return status(403, { message: Errors.FORBIDDEN })
+}
+```
+
+## 7. Embracing Powerful Native APIs vs Third-Party Packages
 - **Prioritize Native Efficiency:** Aim to build on standard resilient ECMAScript and robust native Browser APIs over resorting straight to heavy external formatting node_modules.
 - **Intrinsic Localization Capabilities:** 
   - Leverage `Intl.DateTimeFormatOptions` and natively injected parameters for `toLocaleDateString` for precise Indonesian (`id-ID`) date adjustments instead of installing libraries like MomentJS.
