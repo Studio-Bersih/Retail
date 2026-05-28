@@ -47,6 +47,8 @@ export async function getTransactionByIdHandler(context: {
     session: JwtSession
 }) {
     const foundTransaction = await getTransactionById(context.params.transactionId)
-    if (!foundTransaction) return status(404, { message: Errors.NOT_FOUND })
+    if (!foundTransaction) {
+        return status(404, { message: Errors.NOT_FOUND })
+    }
     return foundTransaction
 }

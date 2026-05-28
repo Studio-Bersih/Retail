@@ -54,7 +54,9 @@ export async function createStockMovement(params: {
                 eq(outletStock.outletId, params.outletId)
             ))
 
-        if (!existingStock) throw new Error('OUTLET_STOCK_NOT_FOUND')
+        if (!existingStock) {
+            throw new Error('OUTLET_STOCK_NOT_FOUND')
+        }
 
         await databaseTransaction
             .update(outletStock)

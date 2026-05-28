@@ -84,7 +84,9 @@ export async function createPtRequest(params: {
             .from(transactions)
             .where(eq(transactions.id, params.transactionId))
 
-        if (!existingTransaction) throw new Error('TRANSACTION_NOT_FOUND')
+        if (!existingTransaction) {
+            throw new Error('TRANSACTION_NOT_FOUND')
+        }
 
         const txItems    = await databaseTransaction.select().from(transactionItems).where(eq(transactionItems.transactionId, params.transactionId))
         const txPayments = await databaseTransaction.select().from(transactionPayments).where(eq(transactionPayments.transactionId, params.transactionId))
@@ -134,7 +136,9 @@ export async function updatePtRequest(requestId: string, params: {
             .from(ptRequests)
             .where(and(eq(ptRequests.id, requestId), eq(ptRequests.status, 'pending')))
 
-        if (!existingRequest) throw new Error('PT_REQUEST_NOT_FOUND_OR_NOT_PENDING')
+        if (!existingRequest) {
+            throw new Error('PT_REQUEST_NOT_FOUND_OR_NOT_PENDING')
+        }
 
         const [updatedRequest] = await databaseTransaction
             .update(ptRequests)
@@ -163,7 +167,9 @@ export async function approvePtRequest(requestId: string, session: JwtSession) {
             .from(ptRequests)
             .where(and(eq(ptRequests.id, requestId), eq(ptRequests.status, 'pending')))
 
-        if (!existingRequest) throw new Error('PT_REQUEST_NOT_FOUND_OR_NOT_PENDING')
+        if (!existingRequest) {
+            throw new Error('PT_REQUEST_NOT_FOUND_OR_NOT_PENDING')
+        }
 
         const [existingTransaction] = await databaseTransaction
             .select()
@@ -267,7 +273,9 @@ export async function rejectPtRequest(requestId: string, session: JwtSession) {
             .from(ptRequests)
             .where(and(eq(ptRequests.id, requestId), eq(ptRequests.status, 'pending')))
 
-        if (!existingRequest) throw new Error('PT_REQUEST_NOT_FOUND_OR_NOT_PENDING')
+        if (!existingRequest) {
+            throw new Error('PT_REQUEST_NOT_FOUND_OR_NOT_PENDING')
+        }
 
         const [rejectedRequest] = await databaseTransaction
             .update(ptRequests)

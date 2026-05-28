@@ -10,7 +10,9 @@ export async function findUserByCredentials(username: string, password: string) 
             .from(users)
             .where(eq(users.username, username))
 
-        if (!foundUser || !foundUser.isActive) return null
+        if (!foundUser || !foundUser.isActive) {
+            return null
+        }
 
         const isValidPassword = await verifyPassword(password, foundUser.passwordHash)
         return isValidPassword ? foundUser : null

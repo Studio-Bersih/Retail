@@ -26,7 +26,9 @@ export async function getPtRequestByIdHandler(context: {
     session: JwtSession
 }) {
     const foundRequest = await getPtRequestById(context.params.requestId)
-    if (!foundRequest) return status(404, { message: Errors.NOT_FOUND })
+    if (!foundRequest) {
+        return status(404, { message: Errors.NOT_FOUND })
+    }
     return foundRequest
 }
 
@@ -65,7 +67,9 @@ export async function approvePtRequestHandler(context: {
     params:  { requestId: string }
     session: JwtSession
 }) {
-    if (context.session.role === 'cashier') return status(403, { message: Errors.FORBIDDEN })
+    if (context.session.role === 'cashier') {
+        return status(403, { message: Errors.FORBIDDEN })
+    }
     try {
         const approvedRequest = await approvePtRequest(context.params.requestId, context.session)
         return status(201, { message: Messages.PT_APPROVED, request: approvedRequest })
@@ -81,7 +85,9 @@ export async function rejectPtRequestHandler(context: {
     params:  { requestId: string }
     session: JwtSession
 }) {
-    if (context.session.role === 'cashier') return status(403, { message: Errors.FORBIDDEN })
+    if (context.session.role === 'cashier') {
+        return status(403, { message: Errors.FORBIDDEN })
+    }
     try {
         const rejectedRequest = await rejectPtRequest(context.params.requestId, context.session)
         return status(201, { message: Messages.PT_REJECTED, request: rejectedRequest })

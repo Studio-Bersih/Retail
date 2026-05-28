@@ -4,7 +4,9 @@ import { appendFileSync, mkdirSync, existsSync } from 'fs'
 const LOG_DIRECTORY = './logs'
 
 function ensureLogDirectoryExists(): void {
-    if (!existsSync(LOG_DIRECTORY)) mkdirSync(LOG_DIRECTORY, { recursive: true })
+    if (!existsSync(LOG_DIRECTORY)) {
+        mkdirSync(LOG_DIRECTORY, { recursive: true })
+    }
 }
 
 function getFormattedTimestamp(): string {

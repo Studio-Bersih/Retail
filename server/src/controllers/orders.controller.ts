@@ -37,7 +37,9 @@ export async function getOrderByIdHandler(context: {
     session: JwtSession
 }) {
     const foundOrder = await getOrderById(context.params.orderId)
-    if (!foundOrder) return status(404, { message: Errors.NOT_FOUND })
+    if (!foundOrder) {
+        return status(404, { message: Errors.NOT_FOUND })
+    }
     return foundOrder
 }
 

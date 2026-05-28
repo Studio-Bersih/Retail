@@ -115,7 +115,9 @@ export async function getOrderById(orderId: string) {
         .from(orders)
         .where(eq(orders.id, orderId))
 
-    if (!foundOrder) return null
+    if (!foundOrder) {
+        return null
+    }
 
     const foundItems = await db
         .select()
@@ -132,7 +134,9 @@ export async function updateOrder(orderId: string, payload: UpdateOrderPayload, 
             .from(orders)
             .where(and(eq(orders.id, orderId), eq(orders.status, 'active')))
 
-        if (!existingOrder) throw new Error('ORDER_NOT_FOUND_OR_NOT_ACTIVE')
+        if (!existingOrder) {
+            throw new Error('ORDER_NOT_FOUND_OR_NOT_ACTIVE')
+        }
 
         const existingItems = await databaseTransaction
             .select()
@@ -190,7 +194,9 @@ export async function completeOrder(orderId: string, session: JwtSession) {
             .from(orders)
             .where(and(eq(orders.id, orderId), eq(orders.status, 'active')))
 
-        if (!existingOrder) throw new Error('ORDER_NOT_FOUND_OR_NOT_ACTIVE')
+        if (!existingOrder) {
+            throw new Error('ORDER_NOT_FOUND_OR_NOT_ACTIVE')
+        }
 
         const existingItems = await databaseTransaction
             .select()
@@ -204,7 +210,9 @@ export async function completeOrder(orderId: string, session: JwtSession) {
                 .where(and(eq(outletStock.itemId, item.itemId), eq(outletStock.outletId, existingOrder.outletId)))
                 .for('update')
 
-            if (!stockRow || stockRow.stock < item.qty) throw new Error('STOCK_INSUFFICIENT')
+            if (!stockRow || stockRow.stock < item.qty) {
+                throw new Error('STOCK_INSUFFICIENT')
+            }
 
             await databaseTransaction
                 .update(outletStock)

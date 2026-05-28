@@ -8,7 +8,9 @@ export async function login(context: {
     jwt: { sign: (payload: object) => Promise<string> }
 }) {
     const foundUser = await findUserByCredentials(context.body.username, context.body.password)
-    if (!foundUser) return status(401, { message: Errors.UNAUTHORIZED })
+    if (!foundUser) {
+        return status(401, { message: Errors.UNAUTHORIZED })
+    }
 
     const signedToken = await context.jwt.sign({
         userId:   foundUser.id,

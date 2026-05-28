@@ -17,6 +17,8 @@ export async function getMemberByIdHandler(context: {
 	session: JwtSession
 }) {
 	const foundMember = await getMemberById(context.params.memberId)
-	if (!foundMember) return status(404, { message: Errors.NOT_FOUND })
+	if (!foundMember) {
+		return status(404, { message: Errors.NOT_FOUND })
+	}
 	return foundMember
 }

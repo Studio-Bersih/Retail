@@ -86,7 +86,9 @@ export async function saveTransaction(payload: NewTransactionPayload, session: J
                 .where(and(eq(outletStock.itemId, item.id), eq(outletStock.outletId, session.outletId)))
                 .for('update')
 
-            if (!stockRow || stockRow.stock < item.qty) throw new Error('STOCK_INSUFFICIENT')
+            if (!stockRow || stockRow.stock < item.qty) {
+                throw new Error('STOCK_INSUFFICIENT')
+            }
 
             await databaseTransaction
                 .update(outletStock)
@@ -185,7 +187,9 @@ export async function getTransactionById(transactionId: string) {
         .from(transactions)
         .where(eq(transactions.id, transactionId))
 
-    if (!foundTransaction) return null
+    if (!foundTransaction) {
+        return null
+    }
 
     const foundItems    = await db.select().from(transactionItems).where(eq(transactionItems.transactionId, transactionId))
     const foundPayments = await db.select().from(transactionPayments).where(eq(transactionPayments.transactionId, transactionId))

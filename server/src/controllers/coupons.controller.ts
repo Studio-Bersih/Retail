@@ -26,7 +26,9 @@ export async function getCouponByKodeHandler(context: {
     session: JwtSession
 }) {
     const foundCoupon = await getCouponByKode(context.params.kode)
-    if (!foundCoupon) return status(404, { message: Errors.NOT_FOUND })
+    if (!foundCoupon) {
+        return status(404, { message: Errors.NOT_FOUND })
+    }
     return foundCoupon
 }
 
@@ -34,7 +36,9 @@ export async function createCouponHandler(context: {
     body:    CouponParams
     session: JwtSession
 }) {
-    if (context.session.role === 'cashier') return status(403, { message: Errors.FORBIDDEN })
+    if (context.session.role === 'cashier') {
+        return status(403, { message: Errors.FORBIDDEN })
+    }
     const savedCoupon = await createCoupon(context.body, context.session)
     return status(201, { message: Messages.COUPON_CREATED, kode: savedCoupon.kode })
 }
@@ -44,7 +48,9 @@ export async function updateCouponHandler(context: {
     body:    Omit<CouponParams, 'kode'>
     session: JwtSession
 }) {
-    if (context.session.role === 'cashier') return status(403, { message: Errors.FORBIDDEN })
+    if (context.session.role === 'cashier') {
+        return status(403, { message: Errors.FORBIDDEN })
+    }
     try {
         const updatedCoupon = await updateCoupon(context.params.kode, context.body, context.session)
         return { message: Messages.COUPON_UPDATED, coupon: updatedCoupon }
@@ -60,7 +66,9 @@ export async function toggleCouponStatusHandler(context: {
     params:  { kode: string }
     session: JwtSession
 }) {
-    if (context.session.role === 'cashier') return status(403, { message: Errors.FORBIDDEN })
+    if (context.session.role === 'cashier') {
+        return status(403, { message: Errors.FORBIDDEN })
+    }
     try {
         const updatedCoupon = await toggleCouponStatus(context.params.kode, context.session)
         return { message: Messages.COUPON_STATUS_UPDATED, coupon: updatedCoupon }

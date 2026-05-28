@@ -113,7 +113,9 @@ export async function updateCoupon(kode: string, params: Omit<CouponParams, 'kod
             .from(coupons)
             .where(eq(coupons.kode, kode))
 
-        if (!existingCoupon) throw new Error('COUPON_NOT_FOUND')
+        if (!existingCoupon) {
+            throw new Error('COUPON_NOT_FOUND')
+        }
 
         const [updatedCoupon] = await databaseTransaction
             .update(coupons)
@@ -157,7 +159,9 @@ export async function toggleCouponStatus(kode: string, session: JwtSession) {
             .from(coupons)
             .where(eq(coupons.kode, kode))
 
-        if (!existingCoupon) throw new Error('COUPON_NOT_FOUND')
+        if (!existingCoupon) {
+            throw new Error('COUPON_NOT_FOUND')
+        }
 
         const newStatus = existingCoupon.status === 'Active' ? 'Inactive' : 'Active'
 
@@ -187,7 +191,9 @@ export async function validateCoupon(kode: string, params: {
     outletId:  string
 }) {
     const [foundCoupon] = await db.select().from(coupons).where(eq(coupons.kode, kode))
-    if (!foundCoupon) throw new Error('COUPON_NOT_FOUND')
+    if (!foundCoupon) {
+        throw new Error('COUPON_NOT_FOUND')
+    }
 
     const [totalResult] = await db
         .select({ count: sql<number>`count(*)` })

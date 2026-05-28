@@ -19,7 +19,9 @@ export async function getItemByIdHandler(context: {
     session: JwtSession
 }) {
     const foundItem = await getItemById(context.params.itemId)
-    if (!foundItem) return status(404, { message: Errors.NOT_FOUND })
+    if (!foundItem) {
+        return status(404, { message: Errors.NOT_FOUND })
+    }
     return foundItem
 }
 
