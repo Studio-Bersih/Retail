@@ -198,6 +198,14 @@ export async function completeOrder(orderId: string, session: JwtSession) {
             .where(eq(orderItems.orderId, orderId))
 
         for (const item of existingItems.filter(orderItem => !orderItem.isFree)) {
+            const [stockRow] = await databaseTransaction
+                .select({ stock: outletStock.stock })
+                .from(outletStock)
+                .where(and(eq(outletStock.itemId, item.itemId), eq(outletStock.outletId, existingOrder.outletId)))
+                .for('update')
+
+            if (!stockRow || stockRow.stock < item.qty) throw new Error('STOCK_INSUFFICIENT')
+
             await databaseTransaction
                 .update(outletStock)
                 .set({ stock: sql`${outletStock.stock} - ${item.qty}` })

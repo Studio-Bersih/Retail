@@ -17,17 +17,8 @@ export async function openShift(params: {
     date:           string
     openingBalance: number
 }) {
-    return db.transaction(async (databaseTransaction) => {
-        const [existingShift] = await databaseTransaction
-            .select()
-            .from(shifts)
-            .where(and(eq(shifts.outletId, params.outletId), eq(shifts.date, params.date)))
-
-        if (existingShift) {
-            throw new Error('SHIFT_ALREADY_EXISTS')
-        }
-
-        const [newShift] = await databaseTransaction
+    try {
+        const [newShift] = await db
             .insert(shifts)
             .values({
                 outletId:       params.outletId,
@@ -39,7 +30,12 @@ export async function openShift(params: {
             .returning()
 
         return newShift
-    })
+    } catch (caughtError: any) {
+        if (caughtError?.cause?.code === '23505' && caughtError?.cause?.constraint_name === 'shifts_outlet_date_idx') {
+            throw new Error('SHIFT_ALREADY_EXISTS')
+        }
+        throw caughtError
+    }
 }
 
 export async function closeShift(shiftId: string, counts: Array<{ paymentMethod: string; actualAmount: number }>) {

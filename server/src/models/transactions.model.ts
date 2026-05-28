@@ -1,5 +1,5 @@
 import { db } from '../db'
-import { transactions, transactionItems, transactionPayments, outletStock, stockMovements, members, auditLog } from '../db/schema'
+import { transactions, transactionItems, transactionPayments, outletStock, stockMovements, members, auditLog, coupons, kuponLog } from '../db/schema'
 import { eq, and, gte, lte, desc, sql } from 'drizzle-orm'
 import type { JwtSession } from '../types'
 
@@ -58,7 +58,36 @@ export async function saveTransaction(payload: NewTransactionPayload, session: J
             )
         }
 
+        // Coupon quota lock — must happen before stock deductions to fail fast
+        if (payload.kupon) {
+            const [couponRow] = await databaseTransaction
+                .select()
+                .from(coupons)
+                .where(eq(coupons.kode, payload.kupon.kode))
+                .for('update')
+
+            if (couponRow && couponRow.kuotaTotal > 0) {
+                const [usageResult] = await databaseTransaction
+                    .select({ count: sql<number>`count(*)` })
+                    .from(kuponLog)
+                    .where(and(eq(kuponLog.kodeKupon, payload.kupon.kode), eq(kuponLog.logType, 'Applied')))
+
+                if (Number(usageResult?.count ?? 0) >= couponRow.kuotaTotal) {
+                    throw new Error('COUPON_EXHAUSTED')
+                }
+            }
+        }
+
         for (const item of payload.items.filter(soldItem => !soldItem.isFree)) {
+            // Row-level lock prevents concurrent oversell
+            const [stockRow] = await databaseTransaction
+                .select({ stock: outletStock.stock })
+                .from(outletStock)
+                .where(and(eq(outletStock.itemId, item.id), eq(outletStock.outletId, session.outletId)))
+                .for('update')
+
+            if (!stockRow || stockRow.stock < item.qty) throw new Error('STOCK_INSUFFICIENT')
+
             await databaseTransaction
                 .update(outletStock)
                 .set({ stock: sql`${outletStock.stock} - ${item.qty}` })
@@ -82,6 +111,23 @@ export async function saveTransaction(payload: NewTransactionPayload, session: J
                 .update(members)
                 .set({ lastTransactionAt: new Date() })
                 .where(eq(members.id, payload.memberId))
+        }
+
+        if (payload.kupon) {
+            await databaseTransaction.insert(kuponLog).values({
+                kodeKupon:     payload.kupon.kode,
+                idTransaksi:   savedTransaction.id,
+                kodeMember:    payload.memberId,
+                nipKasir:      session.userId,
+                nipOtorisasi:  payload.kupon.authNip,
+                nilaiPotongan: String(payload.kupon.nilaiPotongan),
+                cartMutations: (payload.kupon.cartMutations as unknown[]) ?? [],
+                totalSebelum:  String(payload.subtotal),
+                totalSesudah:  String(payload.total),
+                outlet:        session.outletId,
+                logType:       'Applied',
+                timestamp:     new Date().toISOString()
+            })
         }
 
         await databaseTransaction.insert(auditLog).values({

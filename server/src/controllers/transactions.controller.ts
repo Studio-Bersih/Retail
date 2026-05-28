@@ -9,9 +9,19 @@ export async function createTransactionHandler(context: {
     session: JwtSession
     headers: Record<string, string | undefined>
 }) {
-    const requestId        = context.headers['x-request-id'] ?? ''
-    const savedTransaction = await saveTransaction(context.body, context.session, requestId)
-    return status(201, { message: Messages.TRANSACTION_SAVED, id: savedTransaction.id })
+    try {
+        const requestId        = context.headers['x-request-id'] ?? ''
+        const savedTransaction = await saveTransaction(context.body, context.session, requestId)
+        return status(201, { message: Messages.TRANSACTION_SAVED, id: savedTransaction.id })
+    } catch (caughtError) {
+        if (caughtError instanceof Error && caughtError.message === 'STOCK_INSUFFICIENT') {
+            return status(409, { message: Errors.STOCK_INSUFFICIENT })
+        }
+        if (caughtError instanceof Error && caughtError.message === 'COUPON_EXHAUSTED') {
+            return status(409, { message: Errors.COUPON_EXHAUSTED })
+        }
+        throw caughtError
+    }
 }
 
 export async function getTransactionsHandler(context: {

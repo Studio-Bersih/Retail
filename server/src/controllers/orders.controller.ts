@@ -68,6 +68,9 @@ export async function completeOrderHandler(context: {
         if (caughtError instanceof Error && caughtError.message === 'ORDER_NOT_FOUND_OR_NOT_ACTIVE') {
             return status(404, { message: Errors.NOT_FOUND })
         }
+        if (caughtError instanceof Error && caughtError.message === 'STOCK_INSUFFICIENT') {
+            return status(409, { message: Errors.STOCK_INSUFFICIENT })
+        }
         throw caughtError
     }
 }
