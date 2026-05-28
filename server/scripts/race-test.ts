@@ -506,19 +506,68 @@ async function runBenchmark(): Promise<string> {
     return summary
 }
 
-async function main() {
-    console.log(`\n${c.bold}${c.orange}Studio Bersih — Race Condition Tester${c.reset}`)
-    console.log(`${c.dim}Server: ${BASE_URL}${c.reset}`)
-    await buildTokenPool()
-    await setupTestData()
-    try {
-        if (PHASE === 'all' || PHASE === 'stock')  await runStockRace()
-        if (PHASE === 'all' || PHASE === 'coupon') await runCouponRace()
-        if (PHASE === 'all' || PHASE === 'shift')  await runShiftRace()
-        if (PHASE === 'all' || PHASE === 'bench')  await runBenchmark()
-    } finally {
-        await cleanupTestData()
-        await queryClient.end()
+// ── Summary types ─────────────────────────────────────────────────────────
+interface RunResults {
+    server:    string
+    timestamp: string
+    phases: {
+        stock?:  string
+        coupon?: string
+        shift?:  string
+        bench?:  string
     }
 }
-main().catch(err => { console.error(err); process.exit(1) })
+
+// ── Main ───────────────────────────────────────────────────────────────────
+async function main() {
+    console.log(`\n${c.bold}${c.orange}┌─────────────────────────────────────────┐${c.reset}`)
+    console.log(`${c.bold}${c.orange}│  Studio Bersih — Race Condition Tester  │${c.reset}`)
+    console.log(`${c.bold}${c.orange}│  Server: ${BASE_URL.padEnd(31)}│${c.reset}`)
+    console.log(`${c.bold}${c.orange}└─────────────────────────────────────────┘${c.reset}`)
+
+    try {
+        await buildTokenPool()
+    } catch (err) {
+        console.error(`\n${c.red}Auth failed: ${err}${c.reset}`)
+        await queryClient.end()
+        process.exit(1)
+    }
+
+    await setupTestData()
+
+    const phases: RunResults['phases'] = {}
+
+    try {
+        if (PHASE === 'all' || PHASE === 'stock')  phases.stock  = await runStockRace()
+        if (PHASE === 'all' || PHASE === 'coupon') phases.coupon = await runCouponRace()
+        if (PHASE === 'all' || PHASE === 'shift')  phases.shift  = await runShiftRace()
+        if (PHASE === 'all' || PHASE === 'bench')  phases.bench  = await runBenchmark()
+    } finally {
+        await cleanupTestData()
+    }
+
+    // Summary
+    console.log(`\n${c.bold}${'━'.repeat(45)}${c.reset}`)
+    console.log(`${c.bold}  Studio Bersih — Race Test Summary${c.reset}`)
+    for (const [key, value] of Object.entries(phases)) {
+        console.log(`  ${key.padEnd(8)} ${value}`)
+    }
+    console.log(`${c.bold}${'━'.repeat(45)}${c.reset}\n`)
+
+    if (JSON_MODE) {
+        const report: RunResults = {
+            server:    BASE_URL,
+            timestamp: new Date().toISOString(),
+            phases
+        }
+        process.stdout.write(JSON.stringify(report, null, 2) + '\n')
+    }
+
+    await queryClient.end()
+}
+
+main().catch(async err => {
+    console.error(`\n${c.red}Fatal: ${err}${c.reset}`)
+    await queryClient.end()
+    process.exit(1)
+})
