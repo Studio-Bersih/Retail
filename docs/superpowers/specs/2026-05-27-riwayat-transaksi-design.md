@@ -67,7 +67,7 @@ interface RetailSnapshot {
         deliveryType: 'pickup' | 'delivery'
     } | null
     pointsRedeemed: number
-    voucherId: string | null
+    kupon: { kode: string; nilaiPotongan: number; cartMutations: KuponCartMutation[]; authNip: string | null } | null
     isPiutang: boolean
     piutangAmount: number
 }

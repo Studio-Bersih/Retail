@@ -64,7 +64,6 @@ export interface TransactionSnapshot {
   outletId: string
   memberId: string | null
   pointsRedeemed: number
-  voucherId: string | null
   items: Array<{ id: string; name: string; sku: string; barcode: string; price: number; qty: number; stock: number; isFree: boolean }>
   freeItems: Array<{ id: string; name: string; sku: string; barcode: string; qty: number; stock: number; isFree: true }>
   additionalCosts: { packaging: number; modification: number; transport: number; other: number }
@@ -194,7 +193,6 @@ const base: TransactionSnapshot = {
   outletId: "outlet-1",
   memberId: null,
   pointsRedeemed: 0,
-  voucherId: null,
   items: [{ id: "SKU-001", name: "Krim Wajah SPF50", sku: "SKU-001", barcode: "8991234000012", price: 50000, qty: 2, stock: 10, isFree: false }],
   freeItems: [],
   additionalCosts: { packaging: 5000, transport: 10000, modification: 0, other: 0 },

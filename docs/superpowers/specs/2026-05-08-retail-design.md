@@ -96,7 +96,7 @@ interface RetailPayload {
     auth: { userId: string; outletId: string }
     memberId: string | null
     pointsRedeemed: number              // 0 if none; 1 point = IDR 50.000 off
-    voucherId: string | null
+    kupon: { kode: string; nilaiPotongan: number; cartMutations: KuponCartMutation[]; authNip: string | null } | null
     items: RetailCartItem[]
     freeItems: FreeCartItem[]
     additionalCosts: {
@@ -104,10 +104,6 @@ interface RetailPayload {
         modification: number
         transport: number
         other: number
-    }
-    additionalCut: {
-        fixedAmount: number
-        percentage: number              // 0–100, applied after fixedAmount
     }
     payments: PaymentMethod[]
     isPiutang: boolean

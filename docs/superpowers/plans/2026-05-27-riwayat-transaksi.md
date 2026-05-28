@@ -89,7 +89,6 @@ export interface RetailSnapshot {
         deliveryType: 'pickup' | 'delivery'
     } | null
     pointsRedeemed: number
-    voucherId: string | null
     isPiutang: boolean
     piutangAmount: number
 }
@@ -225,7 +224,6 @@ const baseRetailSnap: RetailSnapshot = {
     notes: '',
     orderMeta: null,
     pointsRedeemed: 0,
-    voucherId: null,
     isPiutang: false,
     piutangAmount: 0,
 }
@@ -480,7 +478,7 @@ const retailSnap1: RetailSnapshot = {
     kupon: null,
     payments: [{ type: 'cash', amount: 505000 }],
     transactionType: 'Walk-In', notes: '',
-    orderMeta: null, pointsRedeemed: 0, voucherId: null, isPiutang: false, piutangAmount: 0,
+    orderMeta: null, pointsRedeemed: 0, isPiutang: false, piutangAmount: 0,
 }
 
 const retailSnap2: RetailSnapshot = {
@@ -491,7 +489,7 @@ const retailSnap2: RetailSnapshot = {
     kupon: null,
     payments: [{ type: 'cash', amount: 350000 }],
     transactionType: 'Walk-In', notes: '',
-    orderMeta: null, pointsRedeemed: 0, voucherId: null, isPiutang: false, piutangAmount: 0,
+    orderMeta: null, pointsRedeemed: 0, isPiutang: false, piutangAmount: 0,
 }
 
 const retailSnap2Proposed: RetailSnapshot = {
@@ -512,7 +510,7 @@ const retailSnap3v1: RetailSnapshot = {
     kupon: null,
     payments: [{ type: 'emoney', amount: 565000 }],
     transactionType: 'Walk-In', notes: 'Harga salah dicatat',
-    orderMeta: null, pointsRedeemed: 0, voucherId: null, isPiutang: false, piutangAmount: 0,
+    orderMeta: null, pointsRedeemed: 0, isPiutang: false, piutangAmount: 0,
 }
 
 const retailSnap3v2: RetailSnapshot = {
@@ -697,11 +695,10 @@ export function approveRepairRequest(id: string, adminId: string): void {
         const delta = -(newItem.qty - (oldItem?.qty ?? 0))
         if (delta !== 0) {
             logStockMovement({
-                id: `sm-pt-${id}-${newItem.id}-${Date.now()}`,
                 itemId: newItem.id, outletId: currentSnap.outletId,
                 delta, source: delta < 0 ? 'sale' : 'sale_void',
-                referenceId: id,
-                recordedAt: new Date().toISOString(), recordedBy: adminId,
+                sourceId: id,
+                executedBy: adminId,
             })
         }
     }
@@ -709,11 +706,10 @@ export function approveRepairRequest(id: string, adminId: string): void {
     for (const oldItem of currentSnap.items) {
         if (!proposed.items.find(i => i.id === oldItem.id)) {
             logStockMovement({
-                id: `sm-pt-void-${id}-${oldItem.id}-${Date.now()}`,
                 itemId: oldItem.id, outletId: currentSnap.outletId,
                 delta: oldItem.qty, source: 'sale_void',
-                referenceId: id,
-                recordedAt: new Date().toISOString(), recordedBy: adminId,
+                sourceId: id,
+                executedBy: adminId,
             })
         }
     }
@@ -1705,7 +1701,7 @@ const retailSnapshot: RetailSnapshot = {
         ? { orderDate: $cart.orderDate, whatsapp: $cart.whatsapp ?? '', branchId: session.outletId, hour: $cart.hour ?? '00:00', deliveryType: $cart.deliveryType ?? 'pickup' }
         : null,
     pointsRedeemed: $cart.pointsRedeemed ?? 0,
-    voucherId: $cart.voucherId ?? null,
+    kupon: appliedKupon ? { kode: appliedKupon.kode, nilaiPotongan: kuponDiscount, cartMutations: appliedKupon.effects.cartMutations, authNip: appliedKupon.authNip } : null,
     isPiutang: $cart.isPiutang ?? false,
     piutangAmount: $cart.piutangAmount ?? 0,
 }
@@ -1824,6 +1820,6 @@ git commit -m "feat: write Pesanan checkout to Riwayat Transaksi"
 **Type consistency:**
 - `RiwayatSnapshot = RetailSnapshot | PesananTransactionSnapshot` — discriminated on `.source`; used correctly in Tasks 2, 3, 4
 - `RepairRequest.status: 'pending' | 'rejected' | 'approved' | 'deleted'` — defined Task 1, used correctly in Tasks 2, 4
-- `logStockMovement` called with `{ id, itemId, outletId, delta, source: 'sale' | 'sale_void', referenceId, recordedAt, recordedBy }` — matches master-items schema
+- `logStockMovement` called with `{ itemId, outletId, delta, source: 'sale' | 'sale_void', sourceId, executedBy }` — matches master-items schema
 - `createRiwayatEntry(snapshot: RiwayatSnapshot)` — single param, no redundant cashierId — consistent with spec fix
 - `getResolvedRepairRequests()` returns status `'approved' | 'rejected'` only (not `'deleted'`) — consistent with Selesai tab display
