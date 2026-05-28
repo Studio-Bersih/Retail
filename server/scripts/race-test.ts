@@ -218,19 +218,23 @@ async function runStockRace(): Promise<string> {
 
     // Verify DB
     const stockRows = await db.select().from(schema.outletStock).where(eq(schema.outletStock.id, TEST_STOCK_ROW_ID))
-    const finalStock = stockRows[0]?.stock ?? '?'
+    const rawStock = stockRows[0]?.stock
+    const finalStock = rawStock !== undefined ? Number(rawStock) : NaN
+
+    const networkErrors = results.filter((r): r is PromiseRejectedResult => r.status === 'rejected').length
 
     console.log(`  Elapsed:   ${elapsed}ms`)
     console.log(`  Successes: ${successes} (expected: 1)`)
     console.log(`  Failures:  ${failures}  (expected: ${N - 1})`)
-    console.log(`  DB stock:  ${finalStock} (expected: 0)`)
+    console.log(`  Network err: ${networkErrors}`)
+    console.log(`  DB stock:  ${isNaN(finalStock) ? 'N/A' : finalStock} (expected: 0)`)
 
-    const raceDetected = successes > 1 || Number(finalStock) < 0
+    const raceDetected = successes > 1 || finalStock < 0
     if (raceDetected) {
-        console.log(`  ${c.red}${c.bold}RACE DETECTED 🔥${c.reset}  Stock went to ${finalStock} with ${successes} successes`)
+        console.log(`  ${c.red}${c.bold}RACE DETECTED 🔥${c.reset}  Stock went to ${isNaN(finalStock) ? 'N/A' : finalStock} with ${successes} successes`)
         return 'RACE DETECTED 🔥'
     }
-    if (successes === 1 && Number(finalStock) === 0) {
+    if (successes === 1 && finalStock === 0) {
         console.log(`  ${c.green}PASS ✅${c.reset}`)
         return 'PASS ✅'
     }
@@ -243,8 +247,11 @@ async function main() {
     console.log(`${c.dim}Server: ${BASE_URL}${c.reset}`)
     await buildTokenPool()
     await setupTestData()
-    await runStockRace()
-    await cleanupTestData()
-    await queryClient.end()
+    try {
+        await runStockRace()
+    } finally {
+        await cleanupTestData()
+        await queryClient.end()
+    }
 }
 main().catch(err => { console.error(err); process.exit(1) })
