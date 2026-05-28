@@ -1,6 +1,6 @@
 import postgres from 'postgres'
 import { drizzle } from 'drizzle-orm/postgres-js'
-import { eq } from 'drizzle-orm'
+import { eq, and } from 'drizzle-orm'
 import * as schema from '../src/db/schema'
 
 // ── Own DB pool (3 connections — closed explicitly at exit) ───────────────
@@ -352,7 +352,9 @@ async function runShiftRace(): Promise<string> {
 
     // Seed: delete any existing shift for kasir1's outlet + today
     const today = new Date().toISOString().slice(0, 10)
-    await db.delete(schema.shifts).where(eq(schema.shifts.outletId, TEST_OUTLET_ID))
+    await db.delete(schema.shifts).where(
+        and(eq(schema.shifts.outletId, TEST_OUTLET_ID), eq(schema.shifts.date, today))
+    )
 
     // Fire N concurrent open-shift requests
     const payload = { outletId: TEST_OUTLET_ID, date: today, openingBalance: 0 }
@@ -378,12 +380,12 @@ async function runShiftRace(): Promise<string> {
 
     // Verify: count shift rows for outlet + today
     const shiftRows = await db.select().from(schema.shifts)
-        .where(eq(schema.shifts.outletId, TEST_OUTLET_ID))
+        .where(and(eq(schema.shifts.outletId, TEST_OUTLET_ID), eq(schema.shifts.date, today)))
     const shiftCount = shiftRows.length
 
-    console.log(`  Elapsed:     ${elapsed}ms`)
-    console.log(`  Successes:   ${successes} (expected: 1)`)
-    console.log(`  Network err: ${networkErrors}`)
+    console.log(`  Elapsed:      ${elapsed}ms`)
+    console.log(`  Successes:    ${successes} (expected: 1)`)
+    console.log(`  Network err:  ${networkErrors}`)
     console.log(`  Shifts in DB: ${shiftCount} (expected: 1)`)
 
     if (shiftCount > 1 || successes > 1) {
