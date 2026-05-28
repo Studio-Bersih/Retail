@@ -104,3 +104,46 @@ describe('POST /api/shifts/open', () => {
         expect(response.status).toBe(409)
     })
 })
+
+describe('POST /api/shifts/close', () => {
+    it('returns 201 and closes the shift', async () => {
+        const response = await app.handle(
+            new Request('http://localhost/api/shifts/close', {
+                method:  'POST',
+                headers: authHeaders,
+                body:    JSON.stringify({
+                    shiftId: openedShiftId,
+                    counts:  [
+                        { paymentMethod: 'Tunai',        actualAmount: 500000 },
+                        { paymentMethod: 'QRIS',         actualAmount: 150000 },
+                        { paymentMethod: 'Transfer Bank', actualAmount: 0 }
+                    ]
+                })
+            })
+        )
+        const responseData = await response.json() as { message: string; shift: { status: string } }
+        expect(response.status).toBe(201)
+        expect(responseData.message).toBe('Shift berhasil ditutup.')
+        expect(responseData.shift.status).toBe('closed')
+    })
+
+    it('returns 200 with null current shift after closing', async () => {
+        const response = await app.handle(
+            new Request('http://localhost/api/shifts/current', { headers: authHeaders })
+        )
+        const responseData = await response.json() as { shift: null }
+        expect(response.status).toBe(200)
+        expect(responseData.shift).toBeNull()
+    })
+
+    it('returns 404 when shiftId does not exist or is already closed', async () => {
+        const response = await app.handle(
+            new Request('http://localhost/api/shifts/close', {
+                method:  'POST',
+                headers: authHeaders,
+                body:    JSON.stringify({ shiftId: 'nonexistent-id', counts: [] })
+            })
+        )
+        expect(response.status).toBe(404)
+    })
+})
