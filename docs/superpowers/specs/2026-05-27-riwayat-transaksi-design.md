@@ -55,7 +55,7 @@ interface RetailSnapshot {
         isFree: true
     }>
     additionalCosts: { packaging: number; modification: number; transport: number; other: number }
-    additionalCut: { fixedAmount: number; percentage: number }
+    kupon: { kode: string; nilaiPotongan: number; cartMutations: KuponCartMutation[]; authNip: string | null } | null
     payments: Array<{ type: string; amount: number }>
     transactionType: string
     notes: string
@@ -67,7 +67,6 @@ interface RetailSnapshot {
         deliveryType: 'pickup' | 'delivery'
     } | null
     pointsRedeemed: number
-    kupon: { kode: string; nilaiPotongan: number; cartMutations: KuponCartMutation[]; authNip: string | null } | null
     isPiutang: boolean
     piutangAmount: number
 }
@@ -102,7 +101,7 @@ interface PesananTransactionSnapshot {
         isFree: true
     }>
     additionalCosts: { packaging: number; modification: number; transport: number; other: number }
-    additionalCut: { fixedAmount: number; percentage: number }
+    kupon: { kode: string; nilaiPotongan: number; cartMutations: KuponCartMutation[]; authNip: string | null } | null
     payments: Array<{ type: string; amount: number }>    // all payments: DP installments + final checkout
     transactionType: string
     notes: string

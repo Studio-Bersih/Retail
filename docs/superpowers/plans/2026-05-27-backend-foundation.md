@@ -378,10 +378,12 @@ export const items = pgTable('items', {
 })
 
 export const outletStock = pgTable('outlet_stock', {
-    id:       text('id').primaryKey().$defaultFn(() => crypto.randomUUID()),
-    itemId:   text('item_id').notNull().references(() => items.id),
-    outletId: text('outlet_id').notNull().references(() => outlets.id),
-    quantity: integer('quantity').notNull().default(0)
+    id:           text('id').primaryKey().$defaultFn(() => crypto.randomUUID()),
+    itemId:       text('item_id').notNull().references(() => items.id),
+    outletId:     text('outlet_id').notNull().references(() => outlets.id),
+    stock:        integer('stock').notNull().default(0),
+    preAdjDelta:  integer('pre_adj_delta').notNull().default(0)
+    // display stock = stock + preAdjDelta — never read stock directly
 }, (stockTable) => ({
     uniqueItemOutlet: uniqueIndex('outlet_stock_item_outlet_idx').on(stockTable.itemId, stockTable.outletId)
 }))

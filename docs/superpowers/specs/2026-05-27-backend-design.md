@@ -236,7 +236,7 @@ export async function saveTransaction(payload: NewTransactionPayload, session: J
         for (const item of payload.items.filter(item => !item.isFree)) {
             await databaseTransaction
                 .update(outletStock)
-                .set({ quantity: sql`quantity - ${item.qty}` })
+                .set({ stock: sql`stock - ${item.qty}` })
                 .where(and(
                     eq(outletStock.itemId, item.id),
                     eq(outletStock.outletId, session.outletId)

@@ -57,7 +57,7 @@ interface PesananSnapshot {
         isFree: true
     }>
     additionalCosts: { packaging: number; modification: number; transport: number; other: number }
-    additionalCut: { fixedAmount: number; percentage: number }
+    kupon: { kode: string; nilaiPotongan: number; cartMutations: KuponCartMutation[]; authNip: string | null } | null
     transactionType: string
     notes: string
     orderMeta: {
@@ -206,7 +206,7 @@ On confirm:
 
 ## Edit — Instant Order Edit
 
-Opens a full edit modal pre-filled with the current snapshot. All fields are editable: items (add, remove, change qty), freeItems, additionalCosts, additionalCut, transactionType, notes, orderMeta, memberId.
+Opens a full edit modal pre-filled with the current snapshot. All fields are editable: items (add, remove, change qty), freeItems, additionalCosts, kupon, transactionType, notes, orderMeta, memberId.
 
 No admin approval required — changes apply immediately because the order has not been checked out yet. Stock is not affected until checkout.
 
