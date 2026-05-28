@@ -207,3 +207,45 @@ describe('GET /api/pt-requests/:requestId', () => {
         expect(response.status).toBe(404)
     })
 })
+
+describe('PUT /api/pt-requests/:requestId', () => {
+    it('returns 200 and updates reason and newSnapshot', async () => {
+        const response = await app.handle(
+            new Request(`http://localhost/api/pt-requests/${createdPtId}`, {
+                method: 'PUT', headers: cashierHeaders,
+                body: JSON.stringify({
+                    reason: 'Updated reason',
+                    newSnapshot: {
+                        items: [{ id: testItemId, qty: 2, price: 20000, isFree: false }],
+                        subtotal: 40000, kupon: null,
+                        additionalCosts: { packaging: 0, transport: 0, modification: 0 },
+                        total: 40000, notes: 'Updated snapshot',
+                        paymentMethods: [{ method: 'Tunai', amount: 40000 }]
+                    }
+                })
+            })
+        )
+        const responseData = await response.json() as { message: string; request: { id: string; reason: string } }
+        expect(response.status).toBe(200)
+        expect(responseData.message).toBe('Permintaan perbaikan berhasil dikirim.')
+        expect(responseData.request.id).toBe(createdPtId)
+        expect(responseData.request.reason).toBe('Updated reason')
+    })
+
+    it('returns 404 for a nonexistent or non-pending request id', async () => {
+        const response = await app.handle(
+            new Request('http://localhost/api/pt-requests/nonexistent-id', {
+                method: 'PUT', headers: cashierHeaders,
+                body: JSON.stringify({
+                    reason: 'x',
+                    newSnapshot: {
+                        items: [], subtotal: 0, kupon: null,
+                        additionalCosts: { packaging: 0, transport: 0, modification: 0 },
+                        total: 0, notes: '', paymentMethods: []
+                    }
+                })
+            })
+        )
+        expect(response.status).toBe(404)
+    })
+})
