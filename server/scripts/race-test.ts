@@ -18,6 +18,10 @@ function getArg(flag: string, fallback: string): string {
 const PHASE    = getArg('--phase', 'all')
 const N        = parseInt(getArg('--concurrency', '10'))
 const DURATION = parseInt(getArg('--duration', '5'))
+
+if (isNaN(N) || N < 1)        { console.error('--concurrency must be a positive integer'); process.exit(1) }
+if (isNaN(DURATION) || DURATION < 1) { console.error('--duration must be a positive integer'); process.exit(1) }
+
 const BASE_URL = getArg('--url', 'http://localhost:3000')
 const JSON_MODE = args.includes('--json')
 
