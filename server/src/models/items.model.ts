@@ -10,17 +10,17 @@ export async function getItems(params: {
 }) {
     const offset = (params.page - 1) * params.limit
 
+    const whereClause = and(
+        eq(items.isActive, true),
+        params.search
+            ? or(ilike(items.name, `%${params.search}%`), ilike(items.sku, `%${params.search}%`))
+            : undefined
+    )
+
     const [countResult] = await db
         .select({ count: sql<number>`count(*)` })
         .from(items)
-        .where(
-            and(
-                eq(items.isActive, true),
-                params.search
-                    ? or(ilike(items.name, `%${params.search}%`), ilike(items.sku, `%${params.search}%`))
-                    : undefined
-            )
-        )
+        .where(whereClause)
 
     const total = Number(countResult?.count ?? 0)
     const totalPages = Math.max(1, Math.ceil(total / params.limit))
@@ -46,14 +46,7 @@ export async function getItems(params: {
                 eq(outletStock.outletId, params.outletId)
             )
         )
-        .where(
-            and(
-                eq(items.isActive, true),
-                params.search
-                    ? or(ilike(items.name, `%${params.search}%`), ilike(items.sku, `%${params.search}%`))
-                    : undefined
-            )
-        )
+        .where(whereClause)
         .limit(params.limit)
         .offset(offset)
 
@@ -73,7 +66,7 @@ export async function getItemStock(itemId: string) {
         .select({
             outletId:   outletStock.outletId,
             outletName: outlets.name,
-            stock:      sql<number>`${outletStock.stock} + ${outletStock.preAdjDelta}`
+            stock:      sql<number>`COALESCE(${outletStock.stock} + ${outletStock.preAdjDelta}, 0)`
         })
         .from(outletStock)
         .innerJoin(outlets, eq(outlets.id, outletStock.outletId))
