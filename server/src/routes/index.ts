@@ -9,6 +9,10 @@ import { createTransactionHandler, getTransactionsHandler, getTransactionByIdHan
 import { createOrderHandler, getOrdersHandler, getOrderByIdHandler, updateOrderHandler, completeOrderHandler } from '../controllers/orders.controller'
 import { getCurrentShiftHandler, openShiftHandler, closeShiftHandler } from '../controllers/kasirHarian.controller'
 import { getStockMovementsHandler, createStockMovementHandler } from '../controllers/stockMovements.controller'
+import {
+    getPtRequestsHandler, getPtRequestByIdHandler, createPtRequestHandler,
+    updatePtRequestHandler, approvePtRequestHandler, rejectPtRequestHandler
+} from '../controllers/ptRequests.controller'
 import { rateLimiterHook } from '../hooks/rateLimiter.hook'
 import { authGuard } from '../hooks/auth.hook'
 import { versionHook } from '../hooks/version.hook'
@@ -201,6 +205,82 @@ export const routes = new Elysia({ prefix: '/api' })
             note:     t.String()
         })
     })
+
+    // ── PT Requests (Perbaikan Transaksi) ─────────────────────────────────
+    .get('/pt-requests', getPtRequestsHandler, {
+        query: t.Object({
+            outletId: t.Optional(t.String()),
+            status:   t.Optional(t.String()),
+            page:     t.Optional(t.String()),
+            limit:    t.Optional(t.String())
+        })
+    })
+    .post('/pt-requests', createPtRequestHandler, {
+        body: t.Object({
+            transactionId: t.String(),
+            reason:        t.String({ minLength: 1 }),
+            newSnapshot:   t.Object({
+                items: t.Array(t.Object({
+                    id:     t.String(),
+                    qty:    t.Integer({ minimum: 1 }),
+                    price:  t.Number(),
+                    isFree: t.Boolean()
+                })),
+                subtotal:        t.Number(),
+                kupon:           t.Nullable(t.Object({
+                    kode:          t.String(),
+                    nilaiPotongan: t.Number(),
+                    cartMutations: t.Unknown(),
+                    authNip:       t.Nullable(t.String())
+                })),
+                additionalCosts: t.Object({
+                    packaging:    t.Number(),
+                    transport:    t.Number(),
+                    modification: t.Number()
+                }),
+                total:          t.Number(),
+                notes:          t.String(),
+                paymentMethods: t.Array(t.Object({
+                    method: t.String(),
+                    amount: t.Number()
+                }))
+            })
+        })
+    })
+    .get('/pt-requests/:requestId', getPtRequestByIdHandler)
+    .put('/pt-requests/:requestId', updatePtRequestHandler, {
+        body: t.Object({
+            reason:      t.String({ minLength: 1 }),
+            newSnapshot: t.Object({
+                items: t.Array(t.Object({
+                    id:     t.String(),
+                    qty:    t.Integer({ minimum: 1 }),
+                    price:  t.Number(),
+                    isFree: t.Boolean()
+                })),
+                subtotal:        t.Number(),
+                kupon:           t.Nullable(t.Object({
+                    kode:          t.String(),
+                    nilaiPotongan: t.Number(),
+                    cartMutations: t.Unknown(),
+                    authNip:       t.Nullable(t.String())
+                })),
+                additionalCosts: t.Object({
+                    packaging:    t.Number(),
+                    transport:    t.Number(),
+                    modification: t.Number()
+                }),
+                total:          t.Number(),
+                notes:          t.String(),
+                paymentMethods: t.Array(t.Object({
+                    method: t.String(),
+                    amount: t.Number()
+                }))
+            })
+        })
+    })
+    .patch('/pt-requests/:requestId/approve', approvePtRequestHandler)
+    .patch('/pt-requests/:requestId/reject',  rejectPtRequestHandler)
 
     // ── Kasir Harian ─────────────────────────────────────────────────────
     .get('/shifts/current', getCurrentShiftHandler)
