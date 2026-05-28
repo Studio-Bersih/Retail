@@ -1,0 +1,57 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ── Light theme tokens ── */
+[data-theme="bersih"] {
+    --primary:       #C2622A;
+    --primary-h:     #A8501F;
+    --primary-dim:   rgba(194, 98, 42, 0.10);
+    --bg:            #F5F0E8;
+    --surface:       #FAF8F5;
+    --card:          #FFFFFF;
+    --border:        #E5DDD5;
+    --border-soft:   #EDE8E2;
+    --text:          #3D2B1F;
+    --text-muted:    #9C7E63;
+    --text-faint:    #C4AC98;
+    --drawer-bg:     #2C1E12;
+    --drawer-text:   #E8C9A8;
+    --drawer-muted:  #9C7E63;
+    --tab-active-bg: rgba(194, 98, 42, 0.08);
+}
+
+/* ── Dark theme tokens ── */
+[data-theme="bersih-dark"] {
+    --primary:       #C2622A;
+    --primary-h:     #A8501F;
+    --primary-dim:   rgba(194, 98, 42, 0.15);
+    --bg:            #1A120B;
+    --surface:       #221710;
+    --card:          #2C1E12;
+    --border:        #3D2B1F;
+    --border-soft:   #342015;
+    --text:          #E8C9A8;
+    --text-muted:    #9C7E63;
+    --text-faint:    #6B5744;
+    --drawer-bg:     #0F0A05;
+    --drawer-text:   #E8C9A8;
+    --drawer-muted:  #6B5744;
+    --tab-active-bg: rgba(194, 98, 42, 0.12);
+}
+
+/* ── Utilities ── */
+@layer utilities {
+    .scrollbar-none {
+        scrollbar-width: none;
+    }
+    .scrollbar-none::-webkit-scrollbar {
+        display: none;
+    }
+}
+
+/* ── Page transition ── */
+@keyframes fadeSlideIn {
+    from { opacity: 0; transform: translateY(8px); }
+    to   { opacity: 1; transform: translateY(0); }
+}
