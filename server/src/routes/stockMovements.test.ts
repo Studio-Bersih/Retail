@@ -116,3 +116,35 @@ describe('POST /api/stock-movements', () => {
         expect(response.status).toBe(401)
     })
 })
+
+describe('GET /api/stock-movements', () => {
+    it('returns 200 with paginated data shape', async () => {
+        const response = await app.handle(
+            new Request(`http://localhost/api/stock-movements?itemId=${testItemId}`, { headers: authHeaders })
+        )
+        const responseData = await response.json() as { data: unknown[]; meta: { page: number; total: number } }
+        expect(response.status).toBe(200)
+        expect(Array.isArray(responseData.data)).toBe(true)
+        expect(typeof responseData.meta.page).toBe('number')
+        expect(typeof responseData.meta.total).toBe('number')
+    })
+
+    it('includes the created movement in the result', async () => {
+        const response = await app.handle(
+            new Request(`http://localhost/api/stock-movements?itemId=${testItemId}&outletId=${testOutletId}`, { headers: authHeaders })
+        )
+        const responseData = await response.json() as { data: Array<{ id: string; delta: number; sourceType: string }> }
+        expect(response.status).toBe(200)
+        const found = responseData.data.find(movement => movement.id === createdMovementId)
+        expect(found).toBeDefined()
+        expect(found?.delta).toBe(10)
+        expect(found?.sourceType).toBe('manual')
+    })
+
+    it('returns 401 without token', async () => {
+        const response = await app.handle(
+            new Request('http://localhost/api/stock-movements', { headers: BASE_HEADERS })
+        )
+        expect(response.status).toBe(401)
+    })
+})
