@@ -7,9 +7,11 @@ import { getMembersHandler, getMemberByIdHandler } from '../controllers/members.
 import { getPromosHandler } from '../controllers/promos.controller'
 import { rateLimiterHook } from '../hooks/rateLimiter.hook'
 import { authGuard } from '../hooks/auth.hook'
+import { versionHook } from '../hooks/version.hook'
 
 export const routes = new Elysia({ prefix: '/api' })
     .use(jwt({ name: 'jwt', secret: process.env.JWT_SECRET! }))
+    .use(versionHook)
 
     // ── Auth (rate-limited) ────────────────────────────────────────────────
     .group('/auth', (authGroup) =>

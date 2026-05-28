@@ -1,4 +1,4 @@
-import Elysia from 'elysia'
+import Elysia, { status } from 'elysia'
 import { MIN_CLIENT_VERSION } from '../utils/constants'
 import { Errors } from '../utils/errors'
 
@@ -16,10 +16,10 @@ function isVersionSufficient(clientVersion: string, minimumVersion: string): boo
 }
 
 export const versionHook = new Elysia({ name: 'version' })
-    .onBeforeHandle(({ headers, error }) => {
+    .onBeforeHandle({ as: 'scoped' }, ({ headers }) => {
         const clientVersion = headers['x-app-version']
-        if (!clientVersion) return error(426, { message: Errors.CLIENT_VERSION_STALE })
+        if (!clientVersion) return status(426, { message: Errors.CLIENT_VERSION_STALE })
         if (!isVersionSufficient(clientVersion, MIN_CLIENT_VERSION)) {
-            return error(426, { message: Errors.CLIENT_VERSION_STALE })
+            return status(426, { message: Errors.CLIENT_VERSION_STALE })
         }
     })
