@@ -249,3 +249,99 @@ describe('PUT /api/pt-requests/:requestId', () => {
         expect(response.status).toBe(404)
     })
 })
+
+describe('PATCH /api/pt-requests/:requestId/approve', () => {
+    it('returns 201, approves the PT request, and adjusts stock', async () => {
+        // Create a fresh PT request for the approve test
+        // Original transaction had qty 5 (stock went 60→55). newSnapshot has qty 3 → stock returns +2 → 57
+        const createResponse = await app.handle(
+            new Request('http://localhost/api/pt-requests', {
+                method: 'POST', headers: cashierHeaders,
+                body: JSON.stringify({
+                    transactionId: testTransactionId,
+                    reason: 'Approve test',
+                    newSnapshot: {
+                        items: [{ id: testItemId, qty: 3, price: 20000, isFree: false }],
+                        subtotal: 60000, kupon: null,
+                        additionalCosts: { packaging: 0, transport: 0, modification: 0 },
+                        total: 60000, notes: 'PT test transaction',
+                        paymentMethods: [{ method: 'Tunai', amount: 60000 }]
+                    }
+                })
+            })
+        )
+        const createData = await createResponse.json() as { id: string }
+        expect(createResponse.status).toBe(201)
+        approvePtId = createData.id
+
+        const approveResponse = await app.handle(
+            new Request(`http://localhost/api/pt-requests/${approvePtId}/approve`, {
+                method: 'PATCH', headers: managerHeaders
+            })
+        )
+        const approveData = await approveResponse.json() as { message: string; request: { status: string } }
+        expect(approveResponse.status).toBe(201)
+        expect(approveData.message).toBe('Perbaikan transaksi disetujui.')
+        expect(approveData.request.status).toBe('approved')
+    })
+
+    it('stock returns +2 after approval (55 + 2 = 57)', async () => {
+        const [stockRow] = await db.select().from(outletStock).where(eq(outletStock.id, testStockRowId))
+        expect(stockRow.stock).toBe(57)
+    })
+
+    it('returns 403 when a cashier tries to approve', async () => {
+        const response = await app.handle(
+            new Request(`http://localhost/api/pt-requests/${createdPtId}/approve`, {
+                method: 'PATCH', headers: cashierHeaders
+            })
+        )
+        expect(response.status).toBe(403)
+    })
+
+    it('returns 404 for a nonexistent or already-reviewed request', async () => {
+        const response = await app.handle(
+            new Request(`http://localhost/api/pt-requests/${approvePtId}/approve`, {
+                method: 'PATCH', headers: managerHeaders
+            })
+        )
+        expect(response.status).toBe(404)
+    })
+})
+
+describe('PATCH /api/pt-requests/:requestId/reject', () => {
+    it('returns 201 and rejects the PT request', async () => {
+        const response = await app.handle(
+            new Request(`http://localhost/api/pt-requests/${createdPtId}/reject`, {
+                method: 'PATCH', headers: managerHeaders
+            })
+        )
+        const responseData = await response.json() as { message: string; request: { status: string } }
+        expect(response.status).toBe(201)
+        expect(responseData.message).toBe('Perbaikan transaksi ditolak.')
+        expect(responseData.request.status).toBe('rejected')
+    })
+
+    it('stock is unchanged after rejection (still 57)', async () => {
+        const [stockRow] = await db.select().from(outletStock).where(eq(outletStock.id, testStockRowId))
+        expect(stockRow.stock).toBe(57)
+    })
+
+    it('returns 403 when a cashier tries to reject', async () => {
+        const response = await app.handle(
+            new Request(`http://localhost/api/pt-requests/any-id/reject`, {
+                method: 'PATCH', headers: cashierHeaders
+            })
+        )
+        expect(response.status).toBe(403)
+    })
+
+    it('returns 401 without token', async () => {
+        const response = await app.handle(
+            new Request(`http://localhost/api/pt-requests/any-id/reject`, {
+                method: 'PATCH', headers: BASE_HEADERS
+            })
+        )
+        expect(response.status).toBe(401)
+    })
+})
