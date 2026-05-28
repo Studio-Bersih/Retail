@@ -6,7 +6,7 @@
 
 **Architecture:** The server lives at `server/` in the monorepo root. All requests flow through correlation → version → logger → auth hooks before reaching controllers. Controllers coordinate but never touch the database; models handle all DB access with every write inside `db.transaction()`. Auth uses JWT via `@elysiajs/jwt`.
 
-**Tech Stack:** Bun, Elysia.js, Drizzle ORM, PostgreSQL (`postgres` driver), Redis (`ioredis`), `@elysiajs/jwt`, `@elysiajs/cors`, `@elysiajs/rate-limit`, `bun:test`
+**Tech Stack:** Bun, Elysia.js, Drizzle ORM, PostgreSQL (`postgres` driver), Redis (`ioredis`), `@elysiajs/jwt`, `@elysiajs/cors`, `bun:test`
 
 > **Naming rules enforced throughout:** camelCase everywhere. No single-letter variable names. Descriptive parameter names in every callback (`.map(item => ...)` not `.map(i => ...)`). Every `catch` block uses `caughtError` not `e`.
 
@@ -410,8 +410,7 @@ export const transactions = pgTable('transactions', {
     memberId:        text('member_id').references(() => members.id),
     mode:            text('mode', { enum: ['retail', 'order'] }).notNull(),
     subtotal:        numeric('subtotal', { precision: 15, scale: 0 }).notNull(),
-    kuponCode:       text('kupon_code'),
-    kuponDiscount:   numeric('kupon_discount', { precision: 15, scale: 0 }).notNull().default('0'),
+    kupon:           jsonb('kupon'),
     additionalCosts: jsonb('additional_costs').notNull().default({ packaging: 0, transport: 0, modification: 0 }),
     total:           numeric('total', { precision: 15, scale: 0 }).notNull(),
     notes:           text('notes').notNull().default(''),
@@ -443,8 +442,7 @@ export const orders = pgTable('orders', {
     userId:          text('user_id').notNull().references(() => users.id),
     memberId:        text('member_id').references(() => members.id),
     subtotal:        numeric('subtotal', { precision: 15, scale: 0 }).notNull(),
-    kuponCode:       text('kupon_code'),
-    kuponDiscount:   numeric('kupon_discount', { precision: 15, scale: 0 }).notNull().default('0'),
+    kupon:           jsonb('kupon'),
     additionalCosts: jsonb('additional_costs').notNull().default({ packaging: 0, transport: 0, modification: 0 }),
     total:           numeric('total', { precision: 15, scale: 0 }).notNull(),
     deposit:         numeric('deposit', { precision: 15, scale: 0 }).notNull().default('0'),
@@ -477,20 +475,38 @@ export const coupons = pgTable('coupons', {
     tanggalMulai:     text('tanggal_mulai').notNull(),
     tanggalBerakhir:  text('tanggal_berakhir'),
     minTransaksi:     numeric('min_transaksi', { precision: 15, scale: 0 }).notNull().default('0'),
-    maxUses:          integer('max_uses'),
-    maxUsesPerMember: integer('max_uses_per_member'),
+    kuotaTotal:       integer('kuota_total').notNull().default(0),
+    kuotaPerMember:   integer('kuota_per_member').notNull().default(0),
+    butuhOtorisasi:   boolean('butuh_otorisasi').notNull().default(false),
+    syaratKetentuan:  text('syarat_ketentuan'),
     effects:          jsonb('effects').notNull(),
     codeType:         text('code_type', { enum: ['Standard', 'Batch', 'PersonalAuto'] }).notNull().default('Standard'),
     createdAt:        timestamp('created_at').notNull().defaultNow()
 })
 
-export const couponUsage = pgTable('coupon_usage', {
+export const kuponCodePool = pgTable('kupon_code_pool', {
     id:            text('id').primaryKey().$defaultFn(() => crypto.randomUUID()),
-    couponId:      text('coupon_id').notNull().references(() => coupons.id),
-    transactionId: text('transaction_id').references(() => transactions.id),
-    userId:        text('user_id').notNull().references(() => users.id),
-    outletId:      text('outlet_id').notNull().references(() => outlets.id),
-    usedAt:        timestamp('used_at').notNull().defaultNow()
+    kuponKode:     text('kupon_kode').notNull().references(() => coupons.kode),
+    code:          text('code').notNull().unique(),
+    kodeMember:    text('kode_member'),
+    usedAt:        text('used_at'),
+    transactionId: text('transaction_id').references(() => transactions.id)
+})
+
+export const kuponLog = pgTable('kupon_log', {
+    id:            text('id').primaryKey().$defaultFn(() => crypto.randomUUID()),
+    kodeKupon:     text('kode_kupon').notNull(),
+    idTransaksi:   text('id_transaksi'),
+    kodeMember:    text('kode_member'),
+    nipKasir:      text('nip_kasir').notNull(),
+    nipOtorisasi:  text('nip_otorisasi'),
+    nilaiPotongan: numeric('nilai_potongan', { precision: 15, scale: 0 }).notNull(),
+    cartMutations: jsonb('cart_mutations').notNull(),
+    totalSebelum:  numeric('total_sebelum', { precision: 15, scale: 0 }).notNull(),
+    totalSesudah:  numeric('total_sesudah', { precision: 15, scale: 0 }).notNull(),
+    outlet:        text('outlet').notNull(),
+    logType:       text('log_type', { enum: ['Applied', 'AuthFailed'] }).notNull(),
+    timestamp:     text('timestamp').notNull()
 })
 
 // ── Promos ─────────────────────────────────────────────────────────────────

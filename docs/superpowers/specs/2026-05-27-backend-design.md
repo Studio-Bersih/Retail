@@ -22,7 +22,7 @@ Build a Bun + Elysia.js REST API server that replaces all client-side mock data 
 | Database | PostgreSQL |
 | Cache | Redis via `ioredis` |
 | Auth | JWT via `@elysiajs/jwt` |
-| Rate limiting | `@elysiajs/rate-limit` |
+| Rate limiting | Custom Redis sliding-window (no npm package — `@elysiajs/rate-limit` does not exist) |
 | Password hashing | `Bun.password` (built-in) |
 | Validation | Elysia TypeBox (`t`) at route level |
 | Logging | Custom hooks + daily rotating log files |
@@ -81,7 +81,7 @@ server/
 │   │   ├── version.hook.ts       — Reads X-App-Version; returns 426 if below MIN_CLIENT_VERSION
 │   │   ├── correlation.hook.ts   — Attaches X-Request-ID to every request and log entry
 │   │   ├── idempotency.hook.ts   — Redis-backed; blocks duplicate POSTs to /transactions and /orders
-│   │   ├── rateLimiter.hook.ts   — @elysiajs/rate-limit applied to auth endpoints
+│   │   ├── rateLimiter.hook.ts   — Custom Redis sliding-window rate limiter applied to auth endpoints
 │   │   └── logger.hook.ts        — Console (dev) + file (all envs); records method, path, status, ms
 │   ├── utils/
 │   │   ├── password.ts           — Bun.password.hash and Bun.password.verify wrappers
@@ -302,7 +302,8 @@ transactionPayments — id, transactionId, method, amount
 ### Orders (Pesanan)
 
 ```typescript
-orders       — id, outletId, userId, memberId, subtotal, kuponCode, kuponDiscount,
+orders       — id, outletId, userId, memberId, subtotal,
+               kupon (jsonb: { kode, nilaiPotongan, cartMutations, authNip } | null),
                additionalCosts (jsonb), total, deposit, remaining, notes, status, dueDate, createdAt
 orderItems   — id, orderId, itemId, qty, price, isFree
 ```

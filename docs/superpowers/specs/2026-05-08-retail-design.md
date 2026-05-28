@@ -216,6 +216,8 @@ Triggered by name search. Dismissed by `ESC`.
 
 ### Coupon Section
 
+> ⚠️ **SUPERSEDED** — The voucher UI described below is replaced by the Kupon system (see `2026-05-27-kupon-design.md`). Do not implement the voucher modal. Implement the Kupon `CouponPanel` + `CouponDetailDrawer` instead.
+
 - A button labelled "🎟 Browse / Enter Code" opens the Coupon Modal.
 - When a voucher is active, the section shows the active code and a remove button.
 
@@ -244,6 +246,8 @@ Four fixed-IDR fields in a 2×2 grid:
 | Other | IDR 0 |
 
 ### Additional Cut
+
+> ⚠️ **SUPERSEDED** — The `additionalCut` mechanism is replaced by the Kupon system (`2026-05-27-kupon-design.md`). Do not implement these fields.
 
 Two fields side by side:
 
