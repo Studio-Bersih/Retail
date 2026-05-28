@@ -8,6 +8,7 @@ import { getPromosHandler } from '../controllers/promos.controller'
 import { createTransactionHandler, getTransactionsHandler, getTransactionByIdHandler } from '../controllers/transactions.controller'
 import { createOrderHandler, getOrdersHandler, getOrderByIdHandler, updateOrderHandler, completeOrderHandler } from '../controllers/orders.controller'
 import { getCurrentShiftHandler, openShiftHandler, closeShiftHandler } from '../controllers/kasirHarian.controller'
+import { getStockMovementsHandler, createStockMovementHandler } from '../controllers/stockMovements.controller'
 import { rateLimiterHook } from '../hooks/rateLimiter.hook'
 import { authGuard } from '../hooks/auth.hook'
 import { versionHook } from '../hooks/version.hook'
@@ -180,6 +181,26 @@ export const routes = new Elysia({ prefix: '/api' })
         })
     })
     .patch('/orders/:orderId/complete', completeOrderHandler)
+
+    // ── Stock Movements ───────────────────────────────────────────────────
+    .get('/stock-movements', getStockMovementsHandler, {
+        query: t.Object({
+            itemId:   t.Optional(t.String()),
+            outletId: t.Optional(t.String()),
+            from:     t.Optional(t.String()),
+            to:       t.Optional(t.String()),
+            page:     t.Optional(t.String()),
+            limit:    t.Optional(t.String())
+        })
+    })
+    .post('/stock-movements', createStockMovementHandler, {
+        body: t.Object({
+            itemId:   t.String(),
+            outletId: t.String(),
+            delta:    t.Integer(),
+            note:     t.String()
+        })
+    })
 
     // ── Kasir Harian ─────────────────────────────────────────────────────
     .get('/shifts/current', getCurrentShiftHandler)
