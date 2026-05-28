@@ -156,3 +156,95 @@ async function cleanupTestData(): Promise<void> {
         console.log(`    DELETE FROM items WHERE sku = 'RACE-001';${c.reset}`)
     }
 }
+
+// ── Phase 1: Stock depletion race ─────────────────────────────────────────
+async function runStockRace(): Promise<string> {
+    phaseHeader(1, 'Stock Depletion Race')
+    console.log(`  Concurrency: ${N} workers | Target stock: 1 unit`)
+
+    // Probe: skip if endpoint not built
+    const probe = await apiFetch('/api/transactions', {
+        method:         'POST',
+        body:           {},
+        token:          tokenPool[0].token,
+        idempotencyKey: crypto.randomUUID()
+    })
+    if (probe.status === 404) {
+        console.log(`  ${c.yellow}SKIPPED ⚠️${c.reset}  /api/transactions not yet built`)
+        return 'SKIPPED'
+    }
+
+    // Seed: set stock = 1
+    await db.update(schema.outletStock)
+        .set({ stock: 1 })
+        .where(eq(schema.outletStock.id, TEST_STOCK_ROW_ID))
+    console.log(`  Stock reset to 1.`)
+
+    // Fire N concurrent transactions
+    const payload = {
+        outletId:        TEST_OUTLET_ID,
+        memberId:        null,
+        mode:            'retail',
+        subtotal:        10000,
+        kupon:           null,
+        additionalCosts: { packaging: 0, transport: 0, modification: 0 },
+        total:           10000,
+        notes:           '__RACE_TEST__',
+        items:           [{ itemId: TEST_ITEM_ID, qty: 1, price: 10000, isFree: false }],
+        paymentMethods:  [{ method: 'Tunai', amount: 10000 }]
+    }
+
+    const start = performance.now()
+    console.log(`  Firing ${N} concurrent requests...`)
+    const results = await Promise.allSettled(
+        Array.from({ length: N }, (_, idx) =>
+            apiFetch('/api/transactions', {
+                method:         'POST',
+                body:           payload,
+                token:          roundRobin(idx).token,
+                idempotencyKey: crypto.randomUUID(),
+                timeoutMs:      15000
+            }).then(async res => ({ status: res.status, ms: Math.round(performance.now() - start) }))
+        )
+    )
+    const elapsed = Math.round(performance.now() - start)
+
+    const responses = results
+        .filter((r): r is PromiseFulfilledResult<{ status: number; ms: number }> => r.status === 'fulfilled')
+        .map(r => r.value)
+
+    const successes = responses.filter(r => r.status === 201).length
+    const failures  = responses.filter(r => r.status !== 201).length
+
+    // Verify DB
+    const stockRows = await db.select().from(schema.outletStock).where(eq(schema.outletStock.id, TEST_STOCK_ROW_ID))
+    const finalStock = stockRows[0]?.stock ?? '?'
+
+    console.log(`  Elapsed:   ${elapsed}ms`)
+    console.log(`  Successes: ${successes} (expected: 1)`)
+    console.log(`  Failures:  ${failures}  (expected: ${N - 1})`)
+    console.log(`  DB stock:  ${finalStock} (expected: 0)`)
+
+    const raceDetected = successes > 1 || Number(finalStock) < 0
+    if (raceDetected) {
+        console.log(`  ${c.red}${c.bold}RACE DETECTED 🔥${c.reset}  Stock went to ${finalStock} with ${successes} successes`)
+        return 'RACE DETECTED 🔥'
+    }
+    if (successes === 1 && Number(finalStock) === 0) {
+        console.log(`  ${c.green}PASS ✅${c.reset}`)
+        return 'PASS ✅'
+    }
+    console.log(`  ${c.red}FAIL ❌${c.reset}  Unexpected result`)
+    return 'FAIL ❌'
+}
+
+async function main() {
+    console.log(`\n${c.bold}${c.orange}Studio Bersih — Race Condition Tester${c.reset}`)
+    console.log(`${c.dim}Server: ${BASE_URL}${c.reset}`)
+    await buildTokenPool()
+    await setupTestData()
+    await runStockRace()
+    await cleanupTestData()
+    await queryClient.end()
+}
+main().catch(err => { console.error(err); process.exit(1) })
