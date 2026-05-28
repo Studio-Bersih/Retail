@@ -1,6 +1,7 @@
 import Elysia, { t } from 'elysia'
 import { jwt } from '@elysiajs/jwt'
 import { login } from '../controllers/auth.controller'
+import { getOutlets, getPaymentMethods, getTransactionTypes } from '../controllers/config.controller'
 import { rateLimiterHook } from '../hooks/rateLimiter.hook'
 import { authGuard } from '../hooks/auth.hook'
 
@@ -21,4 +22,9 @@ export const routes = new Elysia({ prefix: '/api' })
 
     // ── Protected routes — authGuard applied to all routes below ──────────
     .use(authGuard)
+
+    // ── Config (cached 1hr) ─────────────────────────────────────────────
+    .get('/outlets',           getOutlets)
+    .get('/payment-methods',   getPaymentMethods)
+    .get('/transaction-types', getTransactionTypes)
     // Subsequent plans mount their routes here
