@@ -156,3 +156,54 @@ describe('POST /api/pt-requests', () => {
         expect(response.status).toBe(401)
     })
 })
+
+describe('GET /api/pt-requests', () => {
+    it('returns 200 with paginated data shape', async () => {
+        const response = await app.handle(
+            new Request(`http://localhost/api/pt-requests?outletId=${testOutletId}`, { headers: cashierHeaders })
+        )
+        const responseData = await response.json() as { data: unknown[]; meta: { page: number; total: number } }
+        expect(response.status).toBe(200)
+        expect(Array.isArray(responseData.data)).toBe(true)
+        expect(typeof responseData.meta.page).toBe('number')
+        expect(typeof responseData.meta.total).toBe('number')
+    })
+
+    it('includes the created PT request when filtered by status=pending', async () => {
+        const response = await app.handle(
+            new Request(`http://localhost/api/pt-requests?outletId=${testOutletId}&status=pending`, { headers: cashierHeaders })
+        )
+        const responseData = await response.json() as { data: Array<{ id: string; status: string }> }
+        expect(response.status).toBe(200)
+        const found = responseData.data.find(req => req.id === createdPtId)
+        expect(found).toBeDefined()
+        expect(found?.status).toBe('pending')
+    })
+
+    it('returns 401 without token', async () => {
+        const response = await app.handle(
+            new Request('http://localhost/api/pt-requests', { headers: BASE_HEADERS })
+        )
+        expect(response.status).toBe(401)
+    })
+})
+
+describe('GET /api/pt-requests/:requestId', () => {
+    it('returns 200 with PT request detail', async () => {
+        const response = await app.handle(
+            new Request(`http://localhost/api/pt-requests/${createdPtId}`, { headers: cashierHeaders })
+        )
+        const responseData = await response.json() as { id: string; status: string; reason: string }
+        expect(response.status).toBe(200)
+        expect(responseData.id).toBe(createdPtId)
+        expect(responseData.status).toBe('pending')
+        expect(responseData.reason).toBe('Item qty was entered wrong')
+    })
+
+    it('returns 404 for unknown request id', async () => {
+        const response = await app.handle(
+            new Request('http://localhost/api/pt-requests/nonexistent-id', { headers: cashierHeaders })
+        )
+        expect(response.status).toBe(404)
+    })
+})
