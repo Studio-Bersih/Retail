@@ -273,8 +273,13 @@ transactionTypes — id, name, code                                            /
 ### Inventory
 
 ```typescript
-items         — id, sku, name, category, itemType, priceLevel1, priceLevel2, priceLevel3, isActive
-outletStock   — id, itemId, outletId, quantity        // UNIQUE (itemId, outletId)
+items         — id, sku, barcode, name, description, imageUrl, category, satuan, itemType,
+                weight, height,
+                priceLevel1, priceLevel2, priceLevel3, priceLevel4, priceLevel5,
+                availableRegions (jsonb),
+                isActive, createdBy, createdAt, updatedBy, updatedAt
+outletStock   — id, itemId, outletId, stock, preAdjDelta   // UNIQUE (itemId, outletId)
+               // display stock = stock + preAdjDelta (never read stock directly)
 ```
 
 ### Members
@@ -286,8 +291,10 @@ members       — id, name, whatsapp, birthdate, address, points, isPremium, las
 ### Transactions
 
 ```typescript
-transactions       — id, outletId, userId, memberId, mode, subtotal, kuponCode, kuponDiscount,
-                     additionalCosts (jsonb), total, notes, status, createdAt
+transactions       — id, outletId, userId, memberId, mode, subtotal,
+                     kupon (jsonb: { kode, nilaiPotongan, cartMutations, authNip } | null),
+                     additionalCosts (jsonb: { packaging, transport, modification }),
+                     total, notes, status, createdAt
 transactionItems   — id, transactionId, itemId, qty, price, isFree
 transactionPayments — id, transactionId, method, amount
 ```
@@ -303,10 +310,16 @@ orderItems   — id, orderId, itemId, qty, price, isFree
 ### Coupons (Kupon)
 
 ```typescript
-coupons      — id, kode, nama, kategori, kodeMember, outletIds (jsonb), status,
-               tanggalMulai, tanggalBerakhir, minTransaksi, maxUses, maxUsesPerMember,
-               effects (jsonb), codeType, createdAt
-couponUsage  — id, couponId, transactionId, userId, outletId, usedAt
+coupons      — id, kode, nama, kategori, kodeMember, outlet (jsonb: string[] | null), status,
+               tanggalMulai, tanggalBerakhir, minTransaksi, kuotaTotal, kuotaPerMember,
+               butuhOtorisasi, syaratKetentuan, codeType,
+               effects (jsonb: KuponEffects), createdAt, updatedAt
+kuponCodePool — id, kuponKode, code, kodeMember, usedAt, transactionId
+               // Batch and PersonalAuto coupons only; Standard coupons have no pool rows
+kuponLog     — id, kodeKupon, idTransaksi, kodeMember, nipKasir, nipOtorisasi,
+               nilaiPotongan, cartMutations (jsonb), totalSebelum, totalSesudah,
+               outlet, logType, timestamp
+               // logType: "Applied" | "AuthFailed"
 ```
 
 ### Promos
@@ -332,7 +345,10 @@ ptRequests   — id, transactionId, requestedBy, reviewedBy, reason,
 ### Stock Movements
 
 ```typescript
-stockMovements — id, itemId, outletId, delta, sourceType, sourceId, createdBy, createdAt
+stockMovements — id, itemId, outletId, delta, source, sourceId,
+                 stockBefore, stockAfter,
+                 executedBy, executedAt, note
+                 // source: StockMovementSource union (see master-item-design.md)
 ```
 
 ### System
