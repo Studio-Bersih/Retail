@@ -476,6 +476,10 @@ async function runBenchmark(): Promise<string> {
 
         latencies.sort((a, b) => a - b)
         const total = latencies.length
+        if (total === 0) {
+            console.log(`  ${String(concurrency).padEnd(14)}${'0'.padEnd(8)}${'0ms'.padEnd(8)}${'0ms'.padEnd(8)}${'0ms'.padEnd(10)}N/A  (no requests completed)`)
+            continue
+        }
         const rps   = Math.round(total / DURATION)
         const p50   = percentile(latencies, 50)
         const p95   = percentile(latencies, 95)
@@ -488,6 +492,11 @@ async function runBenchmark(): Promise<string> {
         levels.push({ concurrency, rps, p50, p95, p99, errorRate })
 
         if (errorRate > STOP_ERROR_RATE || p99 > STOP_P99_MS) saturated = true
+    }
+
+    if (levels.length === 0) {
+        console.log(`  No benchmark levels completed.`)
+        return 'SKIPPED'
     }
 
     const peak = levels.reduce((best, lvl) => lvl.rps > best.rps ? lvl : best, levels[0])
