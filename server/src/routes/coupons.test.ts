@@ -147,3 +147,145 @@ describe('GET /api/coupons/:kode', () => {
         expect(response.status).toBe(404)
     })
 })
+
+describe('PUT /api/coupons/:kode', () => {
+    it('returns 200 and updates coupon fields', async () => {
+        const response = await app.handle(
+            new Request(`http://localhost/api/coupons/${createdKode}`, {
+                method: 'PUT', headers: managerHeaders,
+                body: JSON.stringify({
+                    nama:            'Test Kupon Updated',
+                    kategori:        'Public',
+                    kodeMember:      null,
+                    outletIds:       null,
+                    status:          'Active',
+                    tanggalMulai:    '2026-01-01',
+                    tanggalBerakhir: null,
+                    minTransaksi:    50000,
+                    kuotaTotal:      100,
+                    kuotaPerMember:  1,
+                    butuhOtorisasi:  false,
+                    syaratKetentuan: 'Min Rp50.000',
+                    effects: {
+                        fixedDiscount:      15000,
+                        percentageDiscount: 0,
+                        cartMutations:      []
+                    },
+                    codeType: 'Standard'
+                })
+            })
+        )
+        const responseData = await response.json() as { message: string; coupon: { nama: string } }
+        expect(response.status).toBe(200)
+        expect(responseData.message).toBe('Kupon berhasil diperbarui.')
+        expect(responseData.coupon.nama).toBe('Test Kupon Updated')
+    })
+
+    it('returns 403 for cashier', async () => {
+        const response = await app.handle(
+            new Request(`http://localhost/api/coupons/${createdKode}`, {
+                method: 'PUT', headers: cashierHeaders,
+                body: JSON.stringify({
+                    nama: 'x', kategori: 'Public', kodeMember: null, outletIds: null,
+                    status: 'Active', tanggalMulai: '2026-01-01', tanggalBerakhir: null,
+                    minTransaksi: 0, kuotaTotal: 0, kuotaPerMember: 0, butuhOtorisasi: false,
+                    syaratKetentuan: null,
+                    effects: { fixedDiscount: 0, percentageDiscount: 0, cartMutations: [] },
+                    codeType: 'Standard'
+                })
+            })
+        )
+        expect(response.status).toBe(403)
+    })
+
+    it('returns 404 for unknown kode', async () => {
+        const response = await app.handle(
+            new Request('http://localhost/api/coupons/NONEXISTENT/status', {
+                method: 'PATCH', headers: managerHeaders
+            })
+        )
+        expect(response.status).toBe(404)
+    })
+})
+
+describe('PATCH /api/coupons/:kode/status', () => {
+    it('returns 200 and toggles status from Active to Inactive', async () => {
+        const response = await app.handle(
+            new Request(`http://localhost/api/coupons/${createdKode}/status`, {
+                method: 'PATCH', headers: managerHeaders
+            })
+        )
+        const responseData = await response.json() as { message: string; coupon: { status: string } }
+        expect(response.status).toBe(200)
+        expect(responseData.message).toBe('Status kupon berhasil diubah.')
+        expect(responseData.coupon.status).toBe('Inactive')
+    })
+
+    it('toggles back to Active on second call', async () => {
+        const response = await app.handle(
+            new Request(`http://localhost/api/coupons/${createdKode}/status`, {
+                method: 'PATCH', headers: managerHeaders
+            })
+        )
+        const responseData = await response.json() as { coupon: { status: string } }
+        expect(response.status).toBe(200)
+        expect(responseData.coupon.status).toBe('Active')
+    })
+
+    it('returns 403 for cashier', async () => {
+        const response = await app.handle(
+            new Request(`http://localhost/api/coupons/${createdKode}/status`, {
+                method: 'PATCH', headers: cashierHeaders
+            })
+        )
+        expect(response.status).toBe(403)
+    })
+})
+
+describe('POST /api/coupons/:kode/validate', () => {
+    it('returns 200 with eligible=true for a valid coupon and sufficient cart total', async () => {
+        const response = await app.handle(
+            new Request(`http://localhost/api/coupons/${createdKode}/validate`, {
+                method: 'POST', headers: cashierHeaders,
+                body: JSON.stringify({
+                    cartTotal: 100000,
+                    memberId:  null,
+                    outletId:  testOutletId
+                })
+            })
+        )
+        const responseData = await response.json() as { eligible: boolean; coupon: { kode: string }; usageHistory: { totalUses: number } }
+        expect(response.status).toBe(200)
+        expect(responseData.eligible).toBe(true)
+        expect(responseData.coupon.kode).toBe(createdKode)
+        expect(typeof responseData.usageHistory.totalUses).toBe('number')
+    })
+
+    it('returns eligible=false with reason=MIN_TRANSAKSI_NOT_MET when cart is too small', async () => {
+        const response = await app.handle(
+            new Request(`http://localhost/api/coupons/${createdKode}/validate`, {
+                method: 'POST', headers: cashierHeaders,
+                body: JSON.stringify({
+                    cartTotal: 10000,
+                    memberId:  null,
+                    outletId:  testOutletId
+                })
+            })
+        )
+        const responseData = await response.json() as { eligible: boolean; reason: string; delta: number }
+        expect(response.status).toBe(200)
+        expect(responseData.eligible).toBe(false)
+        expect(responseData.reason).toBe('MIN_TRANSAKSI_NOT_MET')
+        expect(responseData.delta).toBe(40000)
+    })
+
+    it('returns 404 for unknown kode', async () => {
+        const response = await app.handle(
+            new Request('http://localhost/api/coupons/NONEXISTENT-KODE/validate', {
+                method: 'POST', headers: cashierHeaders,
+                body: JSON.stringify({ cartTotal: 100000, memberId: null, outletId: testOutletId })
+            })
+        )
+        expect(response.status).toBe(404)
+    })
+})
