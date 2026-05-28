@@ -1,6 +1,6 @@
 import { db } from '../db'
 import { transactions, transactionItems, transactionPayments, outletStock, stockMovements, members, auditLog } from '../db/schema'
-import { eq, and, gte, lte, sql } from 'drizzle-orm'
+import { eq, and, gte, lte, desc, sql } from 'drizzle-orm'
 import type { JwtSession } from '../types'
 
 export interface NewTransactionPayload {
@@ -58,7 +58,7 @@ export async function saveTransaction(payload: NewTransactionPayload, session: J
             )
         }
 
-        for (const item of payload.items.filter(item => !item.isFree)) {
+        for (const item of payload.items.filter(soldItem => !soldItem.isFree)) {
             await databaseTransaction
                 .update(outletStock)
                 .set({ stock: sql`${outletStock.stock} - ${item.qty}` })
@@ -126,7 +126,7 @@ export async function getTransactions(params: {
         .select()
         .from(transactions)
         .where(whereConditions)
-        .orderBy(sql`${transactions.createdAt} DESC`)
+        .orderBy(desc(transactions.createdAt))
         .limit(params.limit)
         .offset(offset)
 
