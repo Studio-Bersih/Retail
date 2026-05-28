@@ -205,7 +205,9 @@ export const shifts = pgTable('shifts', {
     status:         text('status', { enum: ['open', 'closed'] }).notNull().default('open'),
     openedAt:       timestamp('opened_at').notNull().defaultNow(),
     closedAt:       timestamp('closed_at')
-})
+}, (t) => [
+    uniqueIndex('shifts_outlet_date_idx').on(t.outletId, t.date)
+])
 
 export const shiftCounts = pgTable('shift_counts', {
     id:             text('id').primaryKey().$defaultFn(() => crypto.randomUUID()),

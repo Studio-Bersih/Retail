@@ -6,7 +6,7 @@ const RATE_LIMIT_WINDOW_MS = 60_000
 
 export const rateLimiterHook = new Elysia({ name: 'rate-limiter' })
     .onBeforeHandle(async ({ request, error }) => {
-        const clientIp     = request.headers.get('x-forwarded-for') ?? 'unknown'
+        const clientIp     = request.headers.get('x-forwarded-for') ?? request.headers.get('x-real-ip') ?? 'local'
         const rateLimitKey = `ratelimit:${clientIp}`
         const requestCount = await redisClient.incr(rateLimitKey)
 
