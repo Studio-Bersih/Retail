@@ -49,10 +49,12 @@ export const items = pgTable('items', {
 })
 
 export const outletStock = pgTable('outlet_stock', {
-    id:       text('id').primaryKey().$defaultFn(() => crypto.randomUUID()),
-    itemId:   text('item_id').notNull().references(() => items.id),
-    outletId: text('outlet_id').notNull().references(() => outlets.id),
-    quantity: integer('quantity').notNull().default(0)
+    id:          text('id').primaryKey().$defaultFn(() => crypto.randomUUID()),
+    itemId:      text('item_id').notNull().references(() => items.id),
+    outletId:    text('outlet_id').notNull().references(() => outlets.id),
+    stock:       integer('stock').notNull().default(0),
+    preAdjDelta: integer('pre_adj_delta').notNull().default(0)
+    // display stock = stock + preAdjDelta — never read stock column directly
 }, (stockTable) => [
     uniqueIndex('outlet_stock_item_outlet_idx').on(stockTable.itemId, stockTable.outletId)
 ])
@@ -79,10 +81,7 @@ export const transactions = pgTable('transactions', {
     memberId:        text('member_id').references(() => members.id),
     mode:            text('mode', { enum: ['retail', 'order'] }).notNull(),
     subtotal:        numeric('subtotal', { precision: 15, scale: 0 }).notNull(),
-    percentDiscount: numeric('percent_discount', { precision: 5, scale: 2 }).notNull().default('0'),
-    fixedDiscount:   numeric('fixed_discount', { precision: 15, scale: 0 }).notNull().default('0'),
-    kuponCode:       text('kupon_code'),
-    kuponDiscount:   numeric('kupon_discount', { precision: 15, scale: 0 }).notNull().default('0'),
+    kupon:           jsonb('kupon'),
     additionalCosts: jsonb('additional_costs').notNull().default({ packaging: 0, transport: 0, modification: 0 }),
     total:           numeric('total', { precision: 15, scale: 0 }).notNull(),
     notes:           text('notes').notNull().default(''),
@@ -114,10 +113,7 @@ export const orders = pgTable('orders', {
     userId:          text('user_id').notNull().references(() => users.id),
     memberId:        text('member_id').references(() => members.id),
     subtotal:        numeric('subtotal', { precision: 15, scale: 0 }).notNull(),
-    percentDiscount: numeric('percent_discount', { precision: 5, scale: 2 }).notNull().default('0'),
-    fixedDiscount:   numeric('fixed_discount', { precision: 15, scale: 0 }).notNull().default('0'),
-    kuponCode:       text('kupon_code'),
-    kuponDiscount:   numeric('kupon_discount', { precision: 15, scale: 0 }).notNull().default('0'),
+    kupon:           jsonb('kupon'),
     additionalCosts: jsonb('additional_costs').notNull().default({ packaging: 0, transport: 0, modification: 0 }),
     total:           numeric('total', { precision: 15, scale: 0 }).notNull(),
     deposit:         numeric('deposit', { precision: 15, scale: 0 }).notNull().default('0'),
@@ -149,22 +145,39 @@ export const coupons = pgTable('coupons', {
     status:           text('status', { enum: ['Active', 'Inactive'] }).notNull().default('Active'),
     tanggalMulai:     text('tanggal_mulai').notNull(),
     tanggalBerakhir:  text('tanggal_berakhir'),
-    minTransaksi:     numeric('min_transaksi', { precision: 15, scale: 0 }).notNull().default('0'),
-    maxUses:          integer('max_uses'),
-    maxUsesPerMember: integer('max_uses_per_member'),
-    effects:          jsonb('effects').notNull(),
+    minTransaksi:    numeric('min_transaksi', { precision: 15, scale: 0 }).notNull().default('0'),
+    kuotaTotal:      integer('kuota_total').notNull().default(0),
+    kuotaPerMember:  integer('kuota_per_member').notNull().default(0),
+    butuhOtorisasi:  boolean('butuh_otorisasi').notNull().default(false),
+    syaratKetentuan: text('syarat_ketentuan'),
+    effects:         jsonb('effects').notNull(),
     codeType:         text('code_type', { enum: ['Standard', 'Batch', 'PersonalAuto'] }).notNull().default('Standard'),
     createdAt:        timestamp('created_at').notNull().defaultNow()
 })
 
-export const couponUsage = pgTable('coupon_usage', {
+export const kuponCodePool = pgTable('kupon_code_pool', {
     id:            text('id').primaryKey().$defaultFn(() => crypto.randomUUID()),
-    couponId:      text('coupon_id').notNull().references(() => coupons.id),
-    transactionId: text('transaction_id').references(() => transactions.id),
-    orderId:       text('order_id').references(() => orders.id),
-    userId:        text('user_id').notNull().references(() => users.id),
-    outletId:      text('outlet_id').notNull().references(() => outlets.id),
-    usedAt:        timestamp('used_at').notNull().defaultNow()
+    kuponKode:     text('kupon_kode').notNull().references(() => coupons.kode),
+    code:          text('code').notNull().unique(),
+    kodeMember:    text('kode_member'),
+    usedAt:        text('used_at'),
+    transactionId: text('transaction_id').references(() => transactions.id)
+})
+
+export const kuponLog = pgTable('kupon_log', {
+    id:            text('id').primaryKey().$defaultFn(() => crypto.randomUUID()),
+    kodeKupon:     text('kode_kupon').notNull(),
+    idTransaksi:   text('id_transaksi'),
+    kodeMember:    text('kode_member'),
+    nipKasir:      text('nip_kasir').notNull(),
+    nipOtorisasi:  text('nip_otorisasi'),
+    nilaiPotongan: numeric('nilai_potongan', { precision: 15, scale: 0 }).notNull(),
+    cartMutations: jsonb('cart_mutations').notNull(),
+    totalSebelum:  numeric('total_sebelum', { precision: 15, scale: 0 }).notNull(),
+    totalSesudah:  numeric('total_sesudah', { precision: 15, scale: 0 }).notNull(),
+    outlet:        text('outlet').notNull(),
+    logType:       text('log_type', { enum: ['Applied', 'AuthFailed'] }).notNull(),
+    timestamp:     text('timestamp').notNull()
 })
 
 // ── Promos ─────────────────────────────────────────────────────────────────
