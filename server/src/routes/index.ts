@@ -6,6 +6,7 @@ import { getItemsHandler, getItemByIdHandler, getItemStockHandler } from '../con
 import { getMembersHandler, getMemberByIdHandler } from '../controllers/members.controller'
 import { getPromosHandler } from '../controllers/promos.controller'
 import { createTransactionHandler, getTransactionsHandler, getTransactionByIdHandler } from '../controllers/transactions.controller'
+import { createOrderHandler, getOrdersHandler, getOrderByIdHandler, updateOrderHandler, completeOrderHandler } from '../controllers/orders.controller'
 import { getCurrentShiftHandler, openShiftHandler, closeShiftHandler } from '../controllers/kasirHarian.controller'
 import { rateLimiterHook } from '../hooks/rateLimiter.hook'
 import { authGuard } from '../hooks/auth.hook'
@@ -107,6 +108,78 @@ export const routes = new Elysia({ prefix: '/api' })
         })
     })
     .get('/transactions/:transactionId', getTransactionByIdHandler)
+
+    // ── Orders (Pesanan) ─────────────────────────────────────────────────
+    .group('/orders', (orderGroup) =>
+        orderGroup
+            .use(idempotencyHook)
+            .post('', createOrderHandler, {
+                body: t.Object({
+                    memberId:        t.Nullable(t.String()),
+                    items: t.Array(t.Object({
+                        id:     t.String(),
+                        qty:    t.Integer({ minimum: 1 }),
+                        price:  t.Number(),
+                        isFree: t.Boolean()
+                    })),
+                    subtotal:        t.Number(),
+                    kupon:           t.Nullable(t.Object({
+                        kode:          t.String(),
+                        nilaiPotongan: t.Number(),
+                        cartMutations: t.Unknown(),
+                        authNip:       t.Nullable(t.String())
+                    })),
+                    additionalCosts: t.Object({
+                        packaging:    t.Number(),
+                        transport:    t.Number(),
+                        modification: t.Number()
+                    }),
+                    total:     t.Number(),
+                    deposit:   t.Number(),
+                    remaining: t.Number(),
+                    notes:     t.String(),
+                    dueDate:   t.Nullable(t.String())
+                })
+            })
+    )
+    .get('/orders', getOrdersHandler, {
+        query: t.Object({
+            outletId: t.Optional(t.String()),
+            status:   t.Optional(t.String()),
+            page:     t.Optional(t.String()),
+            limit:    t.Optional(t.String())
+        })
+    })
+    .get('/orders/:orderId', getOrderByIdHandler)
+    .put('/orders/:orderId', updateOrderHandler, {
+        body: t.Object({
+            memberId:        t.Nullable(t.String()),
+            items: t.Array(t.Object({
+                id:     t.String(),
+                qty:    t.Integer({ minimum: 1 }),
+                price:  t.Number(),
+                isFree: t.Boolean()
+            })),
+            subtotal:        t.Number(),
+            kupon:           t.Nullable(t.Object({
+                kode:          t.String(),
+                nilaiPotongan: t.Number(),
+                cartMutations: t.Unknown(),
+                authNip:       t.Nullable(t.String())
+            })),
+            additionalCosts: t.Object({
+                packaging:    t.Number(),
+                transport:    t.Number(),
+                modification: t.Number()
+            }),
+            total:     t.Number(),
+            deposit:   t.Number(),
+            remaining: t.Number(),
+            notes:     t.String(),
+            dueDate:   t.Nullable(t.String())
+        })
+    })
+    .patch('/orders/:orderId/complete', completeOrderHandler)
 
     // ── Kasir Harian ─────────────────────────────────────────────────────
     .get('/shifts/current', getCurrentShiftHandler)
