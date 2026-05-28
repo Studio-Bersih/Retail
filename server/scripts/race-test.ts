@@ -104,12 +104,34 @@ async function setupTestData(): Promise<void> {
     console.log(`\n${c.bold}Seeding test data...${c.reset}`)
     TEST_OUTLET_ID = tokenPool.find(t => t.username === 'kasir1')!.outletId
 
-    // Clean up any leftover RACE-001 from a previous aborted run
+    // Clean up or reuse any leftover RACE-001 from a previous aborted run
     const existing = await db.select({ id: schema.items.id }).from(schema.items).where(eq(schema.items.sku, 'RACE-001'))
     if (existing.length > 0) {
         const existingId = existing[0].id
-        await db.delete(schema.outletStock).where(eq(schema.outletStock.itemId, existingId))
-        await db.delete(schema.items).where(eq(schema.items.id, existingId))
+        let deleted = false
+        try {
+            await db.delete(schema.outletStock).where(eq(schema.outletStock.itemId, existingId))
+            await db.delete(schema.items).where(eq(schema.items.id, existingId))
+            deleted = true
+        } catch {
+            // Transactions reference this item — reuse the existing ID instead
+            TEST_ITEM_ID = existingId
+        }
+        if (!deleted) {
+            const stockRows = await db.select({ id: schema.outletStock.id })
+                .from(schema.outletStock)
+                .where(and(eq(schema.outletStock.itemId, existingId), eq(schema.outletStock.outletId, TEST_OUTLET_ID)))
+            if (stockRows.length > 0) {
+                TEST_STOCK_ROW_ID = stockRows[0].id
+                await db.update(schema.outletStock).set({ stock: 100 }).where(eq(schema.outletStock.id, TEST_STOCK_ROW_ID))
+            } else {
+                const [stockRow] = await db.insert(schema.outletStock).values({
+                    itemId: TEST_ITEM_ID, outletId: TEST_OUTLET_ID, stock: 100, preAdjDelta: 0
+                }).returning()
+                TEST_STOCK_ROW_ID = stockRow.id
+            }
+            return
+        }
     }
 
     const [testItem] = await db.insert(schema.items).values({
@@ -182,7 +204,6 @@ async function runStockRace(): Promise<string> {
 
     // Fire N concurrent transactions
     const payload = {
-        outletId:        TEST_OUTLET_ID,
         memberId:        null,
         mode:            'retail',
         subtotal:        10000,
@@ -190,7 +211,7 @@ async function runStockRace(): Promise<string> {
         additionalCosts: { packaging: 0, transport: 0, modification: 0 },
         total:           10000,
         notes:           '__RACE_TEST__',
-        items:           [{ itemId: TEST_ITEM_ID, qty: 1, price: 10000, isFree: false }],
+        items:           [{ id: TEST_ITEM_ID, qty: 1, price: 10000, isFree: false }],
         paymentMethods:  [{ method: 'Tunai', amount: 10000 }]
     }
 
@@ -277,13 +298,12 @@ async function runCouponRace(): Promise<string> {
         kuotaPerMember:  0,
         butuhOtorisasi:  false,
         codeType:        'Standard',
-        effects:         JSON.stringify([{ type: 'fixed_discount', value: 5000 }])
+        effects:         { fixedDiscount: 5000, percentageDiscount: 0, cartMutations: [] }
     })
     console.log(`  Kupon '${TEST_COUPON_KODE}' seeded (kuotaTotal = 1).`)
 
     // Fire N concurrent transactions all using the same kupon code
     const payload = {
-        outletId:        TEST_OUTLET_ID,
         memberId:        null,
         mode:            'retail',
         subtotal:        10000,
@@ -291,7 +311,7 @@ async function runCouponRace(): Promise<string> {
         additionalCosts: { packaging: 0, transport: 0, modification: 0 },
         total:           5000,
         notes:           '__RACE_TEST__',
-        items:           [{ itemId: TEST_ITEM_ID, qty: 1, price: 10000, isFree: false }],
+        items:           [{ id: TEST_ITEM_ID, qty: 1, price: 10000, isFree: false }],
         paymentMethods:  [{ method: 'Tunai', amount: 5000 }]
     }
 
@@ -342,11 +362,11 @@ async function runShiftRace(): Promise<string> {
     console.log(`  Concurrency: ${N} workers | Outlet: kasir1 | Date: today`)
 
     // Probe
-    const probe = await apiFetch('/api/kasir/open', {
-        method: 'POST', body: {}, token: tokenPool[0].token
+    const probe = await apiFetch('/api/shifts/open', {
+        method: 'POST', body: { openingBalance: 0, date: new Date().toISOString().slice(0, 10) }, token: tokenPool[0].token
     })
     if (probe.status === 404) {
-        console.log(`  ${c.yellow}SKIPPED ⚠️${c.reset}  /api/kasir/open not yet built`)
+        console.log(`  ${c.yellow}SKIPPED ⚠️${c.reset}  /api/shifts/open not yet built`)
         return 'SKIPPED'
     }
 
@@ -357,13 +377,13 @@ async function runShiftRace(): Promise<string> {
     )
 
     // Fire N concurrent open-shift requests
-    const payload = { outletId: TEST_OUTLET_ID, date: today, openingBalance: 0 }
+    const payload = { date: today, openingBalance: 0 }
 
     console.log(`  Firing ${N} concurrent requests...`)
     const start = performance.now()
     const results = await Promise.allSettled(
         Array.from({ length: N }, (_, idx) =>
-            apiFetch('/api/kasir/open', {
+            apiFetch('/api/shifts/open', {
                 method: 'POST', body: payload,
                 token: roundRobin(idx).token, timeoutMs: 15000
             }).then(async res => ({ status: res.status, ms: Math.round(performance.now() - start) }))
@@ -432,11 +452,11 @@ async function runBenchmark(): Promise<string> {
     const STOP_P99_MS     = 5000   // stop ramp at p99 > 5s
 
     const payload = {
-        outletId: TEST_OUTLET_ID, memberId: null, mode: 'retail',
+        memberId: null, mode: 'retail',
         subtotal: 10000, kupon: null,
         additionalCosts: { packaging: 0, transport: 0, modification: 0 },
         total: 10000, notes: '__RACE_TEST__',
-        items: [{ itemId: TEST_ITEM_ID, qty: 1, price: 10000, isFree: false }],
+        items: [{ id: TEST_ITEM_ID, qty: 1, price: 10000, isFree: false }],
         paymentMethods: [{ method: 'Tunai', amount: 10000 }]
     }
 
