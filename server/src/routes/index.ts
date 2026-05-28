@@ -2,6 +2,7 @@ import Elysia, { t } from 'elysia'
 import { jwt } from '@elysiajs/jwt'
 import { login } from '../controllers/auth.controller'
 import { getOutlets, getPaymentMethods, getTransactionTypes } from '../controllers/config.controller'
+import { getItemsHandler, getItemByIdHandler, getItemStockHandler } from '../controllers/items.controller'
 import { rateLimiterHook } from '../hooks/rateLimiter.hook'
 import { authGuard } from '../hooks/auth.hook'
 
@@ -27,4 +28,17 @@ export const routes = new Elysia({ prefix: '/api' })
     .get('/outlets',           getOutlets)
     .get('/payment-methods',   getPaymentMethods)
     .get('/transaction-types', getTransactionTypes)
+
+    // ── Items ───────────────────────────────────────────────────────────
+    .get('/items', getItemsHandler, {
+        query: t.Object({
+            outletId: t.Optional(t.String()),
+            search:   t.Optional(t.String()),
+            page:     t.Optional(t.String()),
+            limit:    t.Optional(t.String())
+        })
+    })
+    .get('/items/:itemId',       getItemByIdHandler)
+    .get('/items/:itemId/stock', getItemStockHandler)
+
     // Subsequent plans mount their routes here
