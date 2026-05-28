@@ -168,3 +168,172 @@ describe('POST /api/orders', () => {
         expect(response.status).toBe(401)
     })
 })
+
+describe('GET /api/orders', () => {
+    it('returns 200 with paginated data shape', async () => {
+        const response = await app.handle(
+            new Request(`http://localhost/api/orders?outletId=${testOutletId}`, { headers: authHeaders })
+        )
+        const responseData = await response.json() as { data: unknown[]; meta: { page: number; total: number } }
+        expect(response.status).toBe(200)
+        expect(Array.isArray(responseData.data)).toBe(true)
+        expect(typeof responseData.meta.page).toBe('number')
+        expect(typeof responseData.meta.total).toBe('number')
+    })
+
+    it('includes the created order in the result when filtered by status=active', async () => {
+        const response = await app.handle(
+            new Request(`http://localhost/api/orders?outletId=${testOutletId}&status=active`, { headers: authHeaders })
+        )
+        const responseData = await response.json() as { data: Array<{ id: string; status: string }> }
+        expect(response.status).toBe(200)
+        const found = responseData.data.find(order => order.id === createdOrderId)
+        expect(found).toBeDefined()
+        expect(found?.status).toBe('active')
+    })
+
+    it('returns 401 without token', async () => {
+        const response = await app.handle(
+            new Request('http://localhost/api/orders', { headers: BASE_HEADERS })
+        )
+        expect(response.status).toBe(401)
+    })
+})
+
+describe('GET /api/orders/:orderId', () => {
+    it('returns 200 with order and items for a valid id', async () => {
+        const response = await app.handle(
+            new Request(`http://localhost/api/orders/${createdOrderId}`, { headers: authHeaders })
+        )
+        const responseData = await response.json() as { id: string; status: string; items: unknown[] }
+        expect(response.status).toBe(200)
+        expect(responseData.id).toBe(createdOrderId)
+        expect(responseData.status).toBe('active')
+        expect(Array.isArray(responseData.items)).toBe(true)
+        expect(responseData.items.length).toBeGreaterThan(0)
+    })
+
+    it('returns 404 for unknown order id', async () => {
+        const response = await app.handle(
+            new Request('http://localhost/api/orders/nonexistent-id', { headers: authHeaders })
+        )
+        expect(response.status).toBe(404)
+    })
+})
+
+describe('PUT /api/orders/:orderId', () => {
+    it('returns 200 and updates the order fields and items', async () => {
+        const response = await app.handle(
+            new Request(`http://localhost/api/orders/${createdOrderId}`, {
+                method:  'PUT',
+                headers: authHeaders,
+                body: JSON.stringify({
+                    memberId:        null,
+                    items:           [{ id: testItemId, qty: 5, price: 15000, isFree: false }],
+                    subtotal:        75000,
+                    kupon:           null,
+                    additionalCosts: { packaging: 1000, transport: 0, modification: 0 },
+                    total:           76000,
+                    deposit:         20000,
+                    remaining:       56000,
+                    notes:           'Updated notes',
+                    dueDate:         testDueDate
+                })
+            })
+        )
+        const responseData = await response.json() as { message: string; order: { id: string; notes: string; total: string } }
+        expect(response.status).toBe(200)
+        expect(responseData.message).toBe('Pesanan berhasil disimpan.')
+        expect(responseData.order.id).toBe(createdOrderId)
+        expect(responseData.order.notes).toBe('Updated notes')
+        expect(responseData.order.total).toBe('76000')
+    })
+
+    it('verifies updated items are persisted', async () => {
+        const response = await app.handle(
+            new Request(`http://localhost/api/orders/${createdOrderId}`, { headers: authHeaders })
+        )
+        const responseData = await response.json() as { items: Array<{ qty: number }> }
+        expect(response.status).toBe(200)
+        expect(responseData.items.length).toBe(1)
+        expect(responseData.items[0].qty).toBe(5)
+    })
+
+    it('returns 404 for a nonexistent or non-active order id', async () => {
+        const response = await app.handle(
+            new Request('http://localhost/api/orders/nonexistent-id', {
+                method:  'PUT',
+                headers: authHeaders,
+                body: JSON.stringify({
+                    memberId: null, items: [], subtotal: 0, kupon: null,
+                    additionalCosts: { packaging: 0, transport: 0, modification: 0 },
+                    total: 0, deposit: 0, remaining: 0, notes: '', dueDate: null
+                })
+            })
+        )
+        expect(response.status).toBe(404)
+    })
+})
+
+describe('PATCH /api/orders/:orderId/complete', () => {
+    it('returns 201, changes status to completed, and deducts stock', async () => {
+        const createResponse = await app.handle(
+            new Request('http://localhost/api/orders', {
+                method:  'POST',
+                headers: { ...authHeaders, 'X-Idempotency-Key': crypto.randomUUID() },
+                body: JSON.stringify({
+                    memberId:        null,
+                    items:           [{ id: testItemId, qty: 4, price: 15000, isFree: false }],
+                    subtotal:        60000,
+                    kupon:           null,
+                    additionalCosts: { packaging: 0, transport: 0, modification: 0 },
+                    total:           60000,
+                    deposit:         0,
+                    remaining:       60000,
+                    notes:           'complete test order',
+                    dueDate:         null
+                })
+            })
+        )
+        const createData = await createResponse.json() as { id: string }
+        expect(createResponse.status).toBe(201)
+        completeOrderId = createData.id
+
+        const completeResponse = await app.handle(
+            new Request(`http://localhost/api/orders/${completeOrderId}/complete`, {
+                method:  'PATCH',
+                headers: authHeaders
+            })
+        )
+        const completeData = await completeResponse.json() as { message: string; order: { status: string; remaining: string } }
+        expect(completeResponse.status).toBe(201)
+        expect(completeData.message).toBe('Pesanan berhasil diselesaikan.')
+        expect(completeData.order.status).toBe('completed')
+        expect(completeData.order.remaining).toBe('0')
+    })
+
+    it('deducts stock by item qty after complete (100 - 4 = 96)', async () => {
+        const [stockRow] = await db.select().from(outletStock).where(eq(outletStock.id, testStockRowId))
+        expect(stockRow.stock).toBe(96)
+    })
+
+    it('returns 404 when trying to complete an already-completed order', async () => {
+        const response = await app.handle(
+            new Request(`http://localhost/api/orders/${completeOrderId}/complete`, {
+                method:  'PATCH',
+                headers: authHeaders
+            })
+        )
+        expect(response.status).toBe(404)
+    })
+
+    it('returns 401 without auth token', async () => {
+        const response = await app.handle(
+            new Request('http://localhost/api/orders/some-id/complete', {
+                method:  'PATCH',
+                headers: BASE_HEADERS
+            })
+        )
+        expect(response.status).toBe(401)
+    })
+})
