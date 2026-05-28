@@ -3,3 +3,5 @@ node_modules/
 .svelte-kit/
 build/
 server/logs/*.log
+.env
+server/logs/*.log
