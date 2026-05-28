@@ -400,6 +400,103 @@ async function runShiftRace(): Promise<string> {
     return 'FAIL ❌'
 }
 
+// ── Latency helpers ───────────────────────────────────────────────────────
+function percentile(sorted: number[], p: number): number {
+    return sorted[Math.max(0, Math.ceil((p / 100) * sorted.length) - 1)] ?? 0
+}
+
+function fmtMs(ms: number): string {
+    return ms >= 1000 ? `${(ms / 1000).toFixed(2)}s` : `${ms}ms`
+}
+
+interface BenchLevel { concurrency: number; rps: number; p50: number; p95: number; p99: number; errorRate: number }
+
+// ── Phase 4: Throughput benchmark ─────────────────────────────────────────
+async function runBenchmark(): Promise<string> {
+    phaseHeader(4, 'Throughput Benchmark')
+
+    // Probe
+    const probe = await apiFetch('/api/transactions', {
+        method: 'POST', body: {}, token: tokenPool[0].token, idempotencyKey: crypto.randomUUID()
+    })
+    if (probe.status === 404) {
+        console.log(`  ${c.yellow}SKIPPED ⚠️${c.reset}  /api/transactions not yet built`)
+        return 'SKIPPED'
+    }
+
+    // Ensure ample stock for the benchmark (won't be the bottleneck)
+    await db.update(schema.outletStock).set({ stock: 999999 }).where(eq(schema.outletStock.id, TEST_STOCK_ROW_ID))
+
+    const RAMP_LEVELS = [10, 50, 100, 200, 500]
+    const STOP_ERROR_RATE = 0.05   // stop ramp at 5% errors
+    const STOP_P99_MS     = 5000   // stop ramp at p99 > 5s
+
+    const payload = {
+        outletId: TEST_OUTLET_ID, memberId: null, mode: 'retail',
+        subtotal: 10000, kupon: null,
+        additionalCosts: { packaging: 0, transport: 0, modification: 0 },
+        total: 10000, notes: '__RACE_TEST__',
+        items: [{ itemId: TEST_ITEM_ID, qty: 1, price: 10000, isFree: false }],
+        paymentMethods: [{ method: 'Tunai', amount: 10000 }]
+    }
+
+    const levels: BenchLevel[] = []
+    let saturated = false
+
+    console.log(`  Duration per level: ${DURATION}s`)
+    console.log(`  Stop condition: error rate > 5% or p99 > 5s`)
+    console.log(`\n  ${'Concurrency'.padEnd(14)}${'RPS'.padEnd(8)}${'p50'.padEnd(8)}${'p95'.padEnd(8)}${'p99'.padEnd(10)}Errors`)
+    console.log(`  ${'─'.repeat(52)}`)
+
+    for (const concurrency of RAMP_LEVELS) {
+        if (saturated) break
+
+        const latencies: number[] = []
+        let errors = 0
+        const deadline = Date.now() + DURATION * 1000
+        const token    = tokenPool[0].token
+
+        await Promise.all(
+            Array.from({ length: concurrency }, async () => {
+                while (Date.now() < deadline) {
+                    const t0 = performance.now()
+                    try {
+                        const res = await apiFetch('/api/transactions', {
+                            method: 'POST', body: payload,
+                            token, idempotencyKey: crypto.randomUUID(), timeoutMs: 10000
+                        })
+                        if (!res.ok) errors++
+                        // drain body to free connection
+                        await res.text()
+                    } catch { errors++ }
+                    latencies.push(Math.round(performance.now() - t0))
+                }
+            })
+        )
+
+        latencies.sort((a, b) => a - b)
+        const total = latencies.length
+        const rps   = Math.round(total / DURATION)
+        const p50   = percentile(latencies, 50)
+        const p95   = percentile(latencies, 95)
+        const p99   = percentile(latencies, 99)
+        const errorRate = errors / total
+
+        const satFlag = (errorRate > STOP_ERROR_RATE || p99 > STOP_P99_MS) ? `  ${c.yellow}← saturation${c.reset}` : ''
+        console.log(`  ${String(concurrency).padEnd(14)}${String(rps).padEnd(8)}${fmtMs(p50).padEnd(8)}${fmtMs(p95).padEnd(8)}${fmtMs(p99).padEnd(10)}${(errorRate * 100).toFixed(1)}%${satFlag}`)
+
+        levels.push({ concurrency, rps, p50, p95, p99, errorRate })
+
+        if (errorRate > STOP_ERROR_RATE || p99 > STOP_P99_MS) saturated = true
+    }
+
+    const peak = levels.reduce((best, lvl) => lvl.rps > best.rps ? lvl : best, levels[0])
+    const summary = `Peak ${peak.rps} RPS @ concurrency ${peak.concurrency}`
+    console.log(`\n  ${c.bold}${c.green}${summary}${c.reset}`)
+
+    return summary
+}
+
 async function main() {
     console.log(`\n${c.bold}${c.orange}Studio Bersih — Race Condition Tester${c.reset}`)
     console.log(`${c.dim}Server: ${BASE_URL}${c.reset}`)
@@ -409,6 +506,7 @@ async function main() {
         if (PHASE === 'all' || PHASE === 'stock')  await runStockRace()
         if (PHASE === 'all' || PHASE === 'coupon') await runCouponRace()
         if (PHASE === 'all' || PHASE === 'shift')  await runShiftRace()
+        if (PHASE === 'all' || PHASE === 'bench')  await runBenchmark()
     } finally {
         await cleanupTestData()
         await queryClient.end()
