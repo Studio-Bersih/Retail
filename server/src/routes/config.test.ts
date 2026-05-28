@@ -50,6 +50,13 @@ describe('GET /api/payment-methods', () => {
         expect(Array.isArray(responseData)).toBe(true)
         expect(responseData.length).toBeGreaterThan(0)
     })
+
+    it('returns 401 without auth token', async () => {
+        const response = await app.handle(
+            new Request('http://localhost/api/payment-methods', { headers: BASE_HEADERS })
+        )
+        expect(response.status).toBe(401)
+    })
 })
 
 describe('GET /api/transaction-types', () => {
@@ -61,5 +68,12 @@ describe('GET /api/transaction-types', () => {
         expect(response.status).toBe(200)
         expect(Array.isArray(responseData)).toBe(true)
         expect(responseData.length).toBeGreaterThan(0)
+    })
+
+    it('returns 401 without auth token', async () => {
+        const response = await app.handle(
+            new Request('http://localhost/api/transaction-types', { headers: BASE_HEADERS })
+        )
+        expect(response.status).toBe(401)
     })
 })

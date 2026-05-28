@@ -10,7 +10,7 @@ export async function getAllOutlets() {
     if (cachedOutlets) return cachedOutlets
 
     const allOutlets = await db.select().from(outlets).where(eq(outlets.isActive, true))
-    await cacheSet(cacheKey, allOutlets, CACHE_TTL_CONFIG)
+    await cacheSet(cacheKey, allOutlets, CACHE_TTL_CONFIG).catch(() => {})
     return allOutlets
 }
 
@@ -20,7 +20,7 @@ export async function getAllPaymentMethods() {
     if (cachedMethods) return cachedMethods
 
     const allMethods = await db.select().from(paymentMethods).where(eq(paymentMethods.isActive, true))
-    await cacheSet(cacheKey, allMethods, CACHE_TTL_CONFIG)
+    await cacheSet(cacheKey, allMethods, CACHE_TTL_CONFIG).catch(() => {})
     return allMethods
 }
 
@@ -30,6 +30,6 @@ export async function getAllTransactionTypes() {
     if (cachedTypes) return cachedTypes
 
     const allTypes = await db.select().from(transactionTypes)
-    await cacheSet(cacheKey, allTypes, CACHE_TTL_CONFIG)
+    await cacheSet(cacheKey, allTypes, CACHE_TTL_CONFIG).catch(() => {})
     return allTypes
 }
