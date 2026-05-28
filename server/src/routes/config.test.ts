@@ -31,6 +31,13 @@ describe('GET /api/outlets', () => {
         expect(Array.isArray(responseData)).toBe(true)
         expect(responseData.length).toBeGreaterThan(0)
     })
+
+    it('returns 401 without auth token', async () => {
+        const response = await app.handle(
+            new Request('http://localhost/api/outlets', { headers: BASE_HEADERS })
+        )
+        expect(response.status).toBe(401)
+    })
 })
 
 describe('GET /api/payment-methods', () => {
