@@ -4,6 +4,7 @@ import { login } from '../controllers/auth.controller'
 import { getOutlets, getPaymentMethods, getTransactionTypes } from '../controllers/config.controller'
 import { getItemsHandler, getItemByIdHandler, getItemStockHandler } from '../controllers/items.controller'
 import { getMembersHandler, getMemberByIdHandler } from '../controllers/members.controller'
+import { getPromosHandler } from '../controllers/promos.controller'
 import { rateLimiterHook } from '../hooks/rateLimiter.hook'
 import { authGuard } from '../hooks/auth.hook'
 
@@ -52,4 +53,5 @@ export const routes = new Elysia({ prefix: '/api' })
     })
     .get('/members/:memberId', getMemberByIdHandler)
 
-    // Subsequent plans mount their routes here
+    // ── Promos ──────────────────────────────────────────────────────────
+    .get('/promos', getPromosHandler)
