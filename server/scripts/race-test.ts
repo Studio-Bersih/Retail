@@ -242,13 +242,108 @@ async function runStockRace(): Promise<string> {
     return 'FAIL ❌'
 }
 
+// ── Phase 2: Coupon double-redemption race ────────────────────────────────
+async function runCouponRace(): Promise<string> {
+    phaseHeader(2, 'Coupon Double-Redemption Race')
+    console.log(`  Concurrency: ${N} workers | Kupon: ${TEST_COUPON_KODE} (kuotaTotal = 1)`)
+
+    // Probe
+    const probe = await apiFetch('/api/transactions', {
+        method: 'POST', body: {}, token: tokenPool[0].token, idempotencyKey: crypto.randomUUID()
+    })
+    if (probe.status === 404) {
+        console.log(`  ${c.yellow}SKIPPED ⚠️${c.reset}  /api/transactions not yet built`)
+        return 'SKIPPED'
+    }
+
+    // Cleanup any prior RACETEST coupon and its logs
+    await db.delete(schema.kuponLog).where(eq(schema.kuponLog.kodeKupon, TEST_COUPON_KODE))
+    await db.delete(schema.coupons).where(eq(schema.coupons.kode, TEST_COUPON_KODE))
+
+    // Seed: reset stock to 100 (don't let stock be the constraint — test coupon quota)
+    await db.update(schema.outletStock).set({ stock: 100 }).where(eq(schema.outletStock.id, TEST_STOCK_ROW_ID))
+
+    // Seed: insert single-use coupon
+    const today = new Date().toISOString().slice(0, 10)
+    await db.insert(schema.coupons).values({
+        kode:            TEST_COUPON_KODE,
+        nama:            'Race Test Coupon',
+        kategori:        'Public',
+        status:          'Active',
+        tanggalMulai:    today,
+        tanggalBerakhir: null,
+        minTransaksi:    '0',
+        kuotaTotal:      1,
+        kuotaPerMember:  0,
+        butuhOtorisasi:  false,
+        codeType:        'Standard',
+        effects:         JSON.stringify([{ type: 'fixed_discount', value: 5000 }])
+    })
+    console.log(`  Kupon '${TEST_COUPON_KODE}' seeded (kuotaTotal = 1).`)
+
+    // Fire N concurrent transactions all using the same kupon code
+    const payload = {
+        outletId:        TEST_OUTLET_ID,
+        memberId:        null,
+        mode:            'retail',
+        subtotal:        10000,
+        kupon:           { kode: TEST_COUPON_KODE, nilaiPotongan: 5000, cartMutations: [], authNip: null },
+        additionalCosts: { packaging: 0, transport: 0, modification: 0 },
+        total:           5000,
+        notes:           '__RACE_TEST__',
+        items:           [{ itemId: TEST_ITEM_ID, qty: 1, price: 10000, isFree: false }],
+        paymentMethods:  [{ method: 'Tunai', amount: 5000 }]
+    }
+
+    console.log(`  Firing ${N} concurrent requests...`)
+    const start = performance.now()
+    const results = await Promise.allSettled(
+        Array.from({ length: N }, (_, idx) =>
+            apiFetch('/api/transactions', {
+                method: 'POST', body: payload,
+                token: roundRobin(idx).token, idempotencyKey: crypto.randomUUID(), timeoutMs: 15000
+            }).then(async res => ({ status: res.status, ms: Math.round(performance.now() - start) }))
+        )
+    )
+    const elapsed = Math.round(performance.now() - start)
+
+    const responses = results
+        .filter((r): r is PromiseFulfilledResult<{ status: number; ms: number }> => r.status === 'fulfilled')
+        .map(r => r.value)
+
+    const successes = responses.filter(r => r.status === 201).length
+    const networkErrors = results.filter((r): r is PromiseRejectedResult => r.status === 'rejected').length
+
+    // Verify: count kuponLog Applied rows
+    const logRows = await db.select().from(schema.kuponLog)
+        .where(eq(schema.kuponLog.kodeKupon, TEST_COUPON_KODE))
+    const appliedCount = logRows.filter(row => row.logType === 'Applied').length
+
+    console.log(`  Elapsed:    ${elapsed}ms`)
+    console.log(`  Successes:  ${successes} (expected: 1)`)
+    console.log(`  Network err: ${networkErrors}`)
+    console.log(`  kuponLog Applied rows: ${appliedCount} (expected: 1)`)
+
+    if (successes > 1 || appliedCount > 1) {
+        console.log(`  ${c.red}${c.bold}RACE DETECTED 🔥${c.reset}  Coupon redeemed ${appliedCount}× (successes: ${successes})`)
+        return 'RACE DETECTED 🔥'
+    }
+    if (successes === 1 && appliedCount === 1) {
+        console.log(`  ${c.green}PASS ✅${c.reset}`)
+        return 'PASS ✅'
+    }
+    console.log(`  ${c.red}FAIL ❌${c.reset}  Unexpected result`)
+    return 'FAIL ❌'
+}
+
 async function main() {
     console.log(`\n${c.bold}${c.orange}Studio Bersih — Race Condition Tester${c.reset}`)
     console.log(`${c.dim}Server: ${BASE_URL}${c.reset}`)
     await buildTokenPool()
     await setupTestData()
     try {
-        await runStockRace()
+        if (PHASE === 'all' || PHASE === 'stock')  await runStockRace()
+        if (PHASE === 'all' || PHASE === 'coupon') await runCouponRace()
     } finally {
         await cleanupTestData()
         await queryClient.end()
