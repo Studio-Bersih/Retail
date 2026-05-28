@@ -7,6 +7,9 @@ export const Messages = {
     PT_SUBMITTED: 'Permintaan perbaikan berhasil dikirim.',
     PT_APPROVED: 'Perbaikan transaksi disetujui.',
     PT_REJECTED: 'Perbaikan transaksi ditolak.',
+    COUPON_CREATED:        'Kupon berhasil dibuat.',
+    COUPON_UPDATED:        'Kupon berhasil diperbarui.',
+    COUPON_STATUS_UPDATED: 'Status kupon berhasil diubah.',
     SHIFT_OPENED: 'Shift berhasil dibuka.',
     SHIFT_CLOSED: 'Shift berhasil ditutup.',
 } as const

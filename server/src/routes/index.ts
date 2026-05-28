@@ -8,6 +8,10 @@ import { getPromosHandler } from '../controllers/promos.controller'
 import { createTransactionHandler, getTransactionsHandler, getTransactionByIdHandler } from '../controllers/transactions.controller'
 import { createOrderHandler, getOrdersHandler, getOrderByIdHandler, updateOrderHandler, completeOrderHandler } from '../controllers/orders.controller'
 import { getCurrentShiftHandler, openShiftHandler, closeShiftHandler } from '../controllers/kasirHarian.controller'
+import {
+    getCouponsHandler, getCouponByKodeHandler, createCouponHandler,
+    updateCouponHandler, toggleCouponStatusHandler, validateCouponHandler
+} from '../controllers/coupons.controller'
 import { getStockMovementsHandler, createStockMovementHandler } from '../controllers/stockMovements.controller'
 import {
     getPtRequestsHandler, getPtRequestByIdHandler, createPtRequestHandler,
@@ -297,5 +301,81 @@ export const routes = new Elysia({ prefix: '/api' })
                 paymentMethod: t.String(),
                 actualAmount:  t.Number()
             }))
+        })
+    })
+
+    // ── Coupons (Kupon) ───────────────────────────────────────────────────
+    .get('/coupons', getCouponsHandler, {
+        query: t.Object({
+            search: t.Optional(t.String()),
+            status: t.Optional(t.String()),
+            page:   t.Optional(t.String()),
+            limit:  t.Optional(t.String())
+        })
+    })
+    .post('/coupons', createCouponHandler, {
+        body: t.Object({
+            kode:            t.String({ minLength: 1 }),
+            nama:            t.String({ minLength: 1 }),
+            kategori:        t.Union([t.Literal('Public'), t.Literal('Member-only'), t.Literal('Personal'), t.Literal('Staff/Internal')]),
+            kodeMember:      t.Nullable(t.String()),
+            outletIds:       t.Nullable(t.Array(t.String())),
+            status:          t.Union([t.Literal('Active'), t.Literal('Inactive')]),
+            tanggalMulai:    t.String({ minLength: 1 }),
+            tanggalBerakhir: t.Nullable(t.String()),
+            minTransaksi:    t.Number(),
+            kuotaTotal:      t.Integer(),
+            kuotaPerMember:  t.Integer(),
+            butuhOtorisasi:  t.Boolean(),
+            syaratKetentuan: t.Nullable(t.String()),
+            effects: t.Object({
+                fixedDiscount:      t.Number(),
+                percentageDiscount: t.Number(),
+                cartMutations:      t.Array(t.Object({
+                    type:          t.Union([t.Literal('AddItem'), t.Literal('RemoveItem'), t.Literal('ModifyQty')]),
+                    itemId:        t.String(),
+                    qty:           t.Integer({ minimum: 0 }),
+                    isFree:        t.Boolean(),
+                    priceOverride: t.Number()
+                }))
+            }),
+            codeType: t.Union([t.Literal('Standard'), t.Literal('Batch'), t.Literal('PersonalAuto')])
+        })
+    })
+    .get('/coupons/:kode', getCouponByKodeHandler)
+    .put('/coupons/:kode', updateCouponHandler, {
+        body: t.Object({
+            nama:            t.String({ minLength: 1 }),
+            kategori:        t.Union([t.Literal('Public'), t.Literal('Member-only'), t.Literal('Personal'), t.Literal('Staff/Internal')]),
+            kodeMember:      t.Nullable(t.String()),
+            outletIds:       t.Nullable(t.Array(t.String())),
+            status:          t.Union([t.Literal('Active'), t.Literal('Inactive')]),
+            tanggalMulai:    t.String({ minLength: 1 }),
+            tanggalBerakhir: t.Nullable(t.String()),
+            minTransaksi:    t.Number(),
+            kuotaTotal:      t.Integer(),
+            kuotaPerMember:  t.Integer(),
+            butuhOtorisasi:  t.Boolean(),
+            syaratKetentuan: t.Nullable(t.String()),
+            effects: t.Object({
+                fixedDiscount:      t.Number(),
+                percentageDiscount: t.Number(),
+                cartMutations:      t.Array(t.Object({
+                    type:          t.Union([t.Literal('AddItem'), t.Literal('RemoveItem'), t.Literal('ModifyQty')]),
+                    itemId:        t.String(),
+                    qty:           t.Integer({ minimum: 0 }),
+                    isFree:        t.Boolean(),
+                    priceOverride: t.Number()
+                }))
+            }),
+            codeType: t.Union([t.Literal('Standard'), t.Literal('Batch'), t.Literal('PersonalAuto')])
+        })
+    })
+    .patch('/coupons/:kode/status', toggleCouponStatusHandler)
+    .post('/coupons/:kode/validate', validateCouponHandler, {
+        body: t.Object({
+            cartTotal: t.Number(),
+            memberId:  t.Nullable(t.String()),
+            outletId:  t.String()
         })
     })
