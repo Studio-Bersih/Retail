@@ -40,6 +40,16 @@
     --tab-active-bg: rgba(194, 98, 42, 0.12);
 }
 
+/* ── Icon color adaptation ── */
+/* img-based SVG icons can't use currentColor, so we use CSS filters */
+[data-theme="bersih"]      .icon-auto { filter: none; }
+[data-theme="bersih-dark"] .icon-auto { filter: invert(1); }
+/* Always-light icons for use on always-dark surfaces (drawer) */
+.icon-on-dark { filter: invert(1); }
+
+/* ── Responsive base font ── */
+html { font-size: clamp(13px, 1.1vw, 16px); }
+
 /* ── Utilities ── */
 @layer utilities {
     .scrollbar-none {
