@@ -95,6 +95,45 @@ describe('POST /api/transactions', () => {
         expect(stockRow.stock).toBe(45)
     })
 
+    it('decrements stock for free items and saves isFree flag — total stays 0', async () => {
+        const [before] = await db.select({ stock: outletStock.stock }).from(outletStock).where(eq(outletStock.id, testStockRowId))
+
+        const idempotencyKey = crypto.randomUUID()
+        const response = await app.handle(
+            new Request('http://localhost/api/transactions', {
+                method:  'POST',
+                headers: { ...authHeaders, 'X-Idempotency-Key': idempotencyKey },
+                body: JSON.stringify({
+                    memberId:        null,
+                    mode:            'retail',
+                    items:           [{ id: testItemId, qty: 2, price: 0, isFree: true }],
+                    subtotal:        0,
+                    kupon:           null,
+                    additionalCosts: { packaging: 0, transport: 0, modification: 0 },
+                    total:           0,
+                    notes:           'free item stock test',
+                    paymentMethods:  [{ method: 'Tunai', amount: 0 }]
+                })
+            })
+        )
+        const data = await response.json() as { id: string }
+        expect(response.status).toBe(201)
+
+        const [after] = await db.select({ stock: outletStock.stock }).from(outletStock).where(eq(outletStock.id, testStockRowId))
+        expect(after.stock).toBe(before.stock - 2)
+
+        const [savedItem] = await db.select().from(transactionItems).where(and(eq(transactionItems.transactionId, data.id), eq(transactionItems.itemId, testItemId)))
+        expect(savedItem.isFree).toBe(true)
+        expect(Number(savedItem.price)).toBe(0)
+
+        await db.delete(auditLog).where(eq(auditLog.entityId, data.id))
+        await db.delete(stockMovements).where(eq(stockMovements.sourceId, data.id))
+        await db.delete(transactionPayments).where(eq(transactionPayments.transactionId, data.id))
+        await db.delete(transactionItems).where(eq(transactionItems.transactionId, data.id))
+        await db.delete(transactions).where(eq(transactions.id, data.id))
+        await db.update(outletStock).set({ stock: before.stock }).where(eq(outletStock.id, testStockRowId))
+    })
+
     it('returns the same response for a duplicate idempotency key', async () => {
         const idempotencyKey = crypto.randomUUID()
 

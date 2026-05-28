@@ -154,6 +154,18 @@ Format per entry:
 
 ---
 
+## Retail
+
+### OQ-R01 — QRIS QR code display
+**Status:** Open
+**Raised by:** `2026-05-28-retail-design.md` (brainstorming)
+**Question:** When the cashier selects QRIS as a payment method in the payment modal, a QR code should be rendered on-screen for the customer to scan. Other e-money providers (GoPay, OVO, Dana, BCA Transfer, etc.) do NOT show a QR — only QRIS does. The available payment methods and their QRIS image/payload are configured per-outlet via a separate e-money configuration dashboard. Two sub-questions:
+1. **Backend:** How is the QRIS payload/image stored and retrieved? Per-outlet config record? Static URL? Dynamic generation?
+2. **Frontend:** Where does the QR data come from at checkout time — fetched on modal open, or cached from the outlet config store?
+**Resolution:** Deferred to future implementation. Design the e-money config dashboard and its data model first, then wire QRIS display into the payment modal.
+
+---
+
 ## Kupon
 
 ### OQ-K01 — Supervisor auth PIN model

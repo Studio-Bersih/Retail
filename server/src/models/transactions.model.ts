@@ -78,8 +78,8 @@ export async function saveTransaction(payload: NewTransactionPayload, session: J
             }
         }
 
-        for (const item of payload.items.filter(soldItem => !soldItem.isFree)) {
-            // Row-level lock prevents concurrent oversell
+        for (const item of payload.items) {
+            // Row-level lock prevents concurrent oversell — applies to free items too (stock still leaves the shelf)
             const [stockRow] = await databaseTransaction
                 .select({ stock: outletStock.stock })
                 .from(outletStock)
