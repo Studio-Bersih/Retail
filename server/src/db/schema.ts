@@ -1,4 +1,4 @@
-import { pgTable, text, boolean, timestamp, integer, jsonb, numeric, uniqueIndex } from 'drizzle-orm/pg-core'
+import { pgTable, text, boolean, timestamp, integer, jsonb, numeric, uniqueIndex, varchar } from 'drizzle-orm/pg-core'
 
 // ── Config / Auth ──────────────────────────────────────────────────────────
 
@@ -85,6 +85,7 @@ export const transactions = pgTable('transactions', {
     additionalCosts: jsonb('additional_costs').notNull().default({ packaging: 0, transport: 0, modification: 0 }),
     total:           numeric('total', { precision: 15, scale: 0 }).notNull(),
     notes:           text('notes').notNull().default(''),
+    kategoriAcara:   varchar('kategori_acara', { length: 100 }),
     status:          text('status', { enum: ['completed', 'pending', 'void'] }).notNull().default('completed'),
     createdAt:       timestamp('created_at').notNull().defaultNow()
 })

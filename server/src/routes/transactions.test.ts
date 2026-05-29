@@ -134,6 +134,40 @@ describe('POST /api/transactions', () => {
         await db.update(outletStock).set({ stock: before.stock }).where(eq(outletStock.id, testStockRowId))
     })
 
+    it('saves kategoriAcara when provided', async () => {
+        const idempotencyKey = crypto.randomUUID()
+        const response = await app.handle(
+            new Request('http://localhost/api/transactions', {
+                method:  'POST',
+                headers: { ...authHeaders, 'X-Idempotency-Key': idempotencyKey },
+                body: JSON.stringify({
+                    memberId:        null,
+                    mode:            'retail',
+                    items:           [{ id: testItemId, qty: 1, price: 20000, isFree: false }],
+                    subtotal:        20000,
+                    kupon:           null,
+                    additionalCosts: { packaging: 0, transport: 0, modification: 0 },
+                    total:           20000,
+                    notes:           '',
+                    kategoriAcara:   'Pernikahan',
+                    paymentMethods:  [{ method: 'Tunai', amount: 20000 }]
+                })
+            })
+        )
+        const data = await response.json() as { id: string }
+        expect(response.status).toBe(201)
+
+        const [saved] = await db.select({ kategoriAcara: transactions.kategoriAcara })
+            .from(transactions).where(eq(transactions.id, data.id))
+        expect(saved.kategoriAcara).toBe('Pernikahan')
+
+        await db.delete(auditLog).where(eq(auditLog.entityId, data.id))
+        await db.delete(stockMovements).where(eq(stockMovements.sourceId, data.id))
+        await db.delete(transactionPayments).where(eq(transactionPayments.transactionId, data.id))
+        await db.delete(transactionItems).where(eq(transactionItems.transactionId, data.id))
+        await db.delete(transactions).where(eq(transactions.id, data.id))
+    })
+
     it('returns the same response for a duplicate idempotency key', async () => {
         const idempotencyKey = crypto.randomUUID()
 

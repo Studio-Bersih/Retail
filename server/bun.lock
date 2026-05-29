@@ -8,7 +8,7 @@
         "@elysiajs/cors": "latest",
         "@elysiajs/jwt": "latest",
         "drizzle-orm": "latest",
-        "elysia": "latest",
+        "elysia": "^1.4.28",
         "ioredis": "latest",
         "postgres": "latest",
       },

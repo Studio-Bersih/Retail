@@ -99,6 +99,7 @@ export const routes = new Elysia({ prefix: '/api' })
                     }),
                     total:           t.Number(),
                     notes:           t.String(),
+                    kategoriAcara:   t.Optional(t.Nullable(t.String())),
                     paymentMethods:  t.Array(t.Object({
                         method: t.String(),
                         amount: t.Number()

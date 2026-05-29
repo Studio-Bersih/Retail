@@ -17,6 +17,7 @@ export interface NewTransactionPayload {
     additionalCosts: { packaging: number; transport: number; modification: number }
     total:           number
     notes:           string
+    kategoriAcara:   string | null
     paymentMethods:  Array<{ method: string; amount: number }>
 }
 
@@ -34,6 +35,7 @@ export async function saveTransaction(payload: NewTransactionPayload, session: J
                 additionalCosts: payload.additionalCosts,
                 total:           String(payload.total),
                 notes:           payload.notes,
+                kategoriAcara:   payload.kategoriAcara ?? null,
                 status:          'completed'
             })
             .returning()
