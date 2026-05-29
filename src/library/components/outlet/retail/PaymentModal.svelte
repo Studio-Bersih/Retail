@@ -105,7 +105,7 @@
                 method:  'POST',
                 headers: {
                     'Content-Type':      'application/json',
-                    'Authorization':     `Bearer ${(session as any)?.token ?? ''}`,
+                    'Authorization':     `Bearer ${session?.token ?? ''}`,
                     'X-Idempotency-Key': crypto.randomUUID(),
                     'X-App-Version':     '1.0.0',
                     'X-Request-ID':      crypto.randomUUID(),

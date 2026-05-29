@@ -11,7 +11,9 @@ const MOCK_USERS: MockUser[] = [
 
 export function login(username: string, password: string): AuthSession {
     const user = MOCK_USERS.find(u => u.username === username && u.password === password)
-    if (!user) throw new Error('useNotice.connection.unauthorized')
+    if (!user) {
+        throw new Error('useNotice.connection.unauthorized')
+    }
     const { password: _p, username: _u, ...session } = user
-    return session
+    return { ...session, token: '' }
 }

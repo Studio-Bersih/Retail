@@ -7,6 +7,7 @@ export type AuthSession = {
     role:       'cashier' | 'manager' | 'admin'
     outletId:   string
     outletName: string
+    token:      string
 }
 
 const STORAGE_KEY = 'sb_auth'
