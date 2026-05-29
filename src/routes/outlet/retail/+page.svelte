@@ -345,6 +345,142 @@
     </div>
 {/snippet}
 
+{#snippet memberField()}
+    <div class="text-[10px] font-bold tracking-widest uppercase text-[#9C7E63] mb-1.5">Member</div>
+    {#if memberSelected && $cart.memberName}
+        {@const isPremium = $cart.isPremiumMember}
+        <div class="flex items-center gap-2 {isPremium ? 'bg-[rgba(251,191,36,0.08)] border border-[rgba(251,191,36,0.35)]' : 'bg-[rgba(74,222,128,0.07)] border border-[rgba(74,222,128,0.2)]'} rounded-lg px-2.5 py-1.5">
+            {#if isPremium}
+                <span class="text-base leading-none">♛</span>
+                <div class="flex-1 min-w-0">
+                    <div class="text-[11px] font-bold text-[#fbbf24] truncate">{$cart.memberName}</div>
+                    <div class="text-[10px] text-[rgba(251,191,36,0.6)]">{$cart.memberId} · {$cart.memberPhone}</div>
+                </div>
+                <span class="text-[9px] font-bold text-[#fbbf24] bg-[rgba(251,191,36,0.15)] border border-[rgba(251,191,36,0.3)] rounded px-1.5 py-0.5 shrink-0">PREMIUM</span>
+            {:else}
+                <div class="w-5 h-5 rounded-full bg-[rgba(74,222,128,0.2)] flex items-center justify-center text-[9px] font-bold text-[#4ade80] shrink-0">
+                    {$cart.memberName.slice(0, 2).toUpperCase()}
+                </div>
+                <div class="flex-1 min-w-0">
+                    <div class="text-[11px] font-semibold text-[#4ade80] truncate">{$cart.memberName}</div>
+                    <div class="text-[10px] text-[rgba(74,222,128,0.6)]">{$cart.memberId} · {$cart.memberPhone}</div>
+                </div>
+            {/if}
+            <button onclick={onClearMember} class="text-[#6B5744] hover:text-[#f87171] ml-auto shrink-0">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+            </button>
+        </div>
+    {:else}
+        <div class="relative">
+            <svg class="absolute left-2 top-1/2 -translate-y-1/2 text-[#4D3826]" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/></svg>
+            <input
+                bind:value={memberValue}
+                onkeydown={onMemberKey}
+                class="w-full bg-[#1A120B] border-[1.5px] border-[#3D2B1F] focus:border-[rgba(194,98,42,0.5)] rounded-lg pl-7 pr-3 h-8 text-[12px] text-[#E8C9A8] outline-none"
+                placeholder="Nama, ID, atau nomor HP..."
+                autocomplete="off"
+            />
+            {#if showMemberDropdown}
+                <div class="absolute top-[calc(100%+4px)] left-0 right-0 bg-[#2C1E12] border-[1.5px] border-[#3D2B1F] rounded-xl shadow-2xl z-40 overflow-hidden">
+                    {#if memberResults.length === 0}
+                        <div class="px-3 py-2 text-[11px] text-[#6B5744]">Tidak ditemukan</div>
+                    {:else}
+                        {#each memberResults as m, i}
+                            <button
+                                class="w-full text-left px-3 py-2 border-b border-[#3D2B1F]/20 last:border-0 transition-colors {i === memberHighlight ? 'bg-[rgba(194,98,42,0.1)]' : 'hover:bg-[#3D2B1F]/30'}"
+                                onclick={() => selectMember(m)}
+                            >
+                                <div class="text-[12px] font-semibold text-[#E8C9A8]">{m.name}</div>
+                                <div class="text-[10px] text-[#6B5744] font-mono">{m.id}</div>
+                            </button>
+                        {/each}
+                    {/if}
+                </div>
+            {/if}
+        </div>
+    {/if}
+{/snippet}
+
+{#snippet pricingPanel()}
+    <hr class="border-[#3D2B1F] my-2.5" />
+    <div class="text-[10px] font-bold tracking-widest uppercase text-[#9C7E63] mb-2">Harga</div>
+
+    <div class="flex justify-between items-center mb-1">
+        <span class="text-[12px] text-[#9C7E63]">Subtotal</span>
+        <span class="text-[12px] text-[#E8C9A8]">{rupiahFormatter.format(subtotal)}</span>
+    </div>
+
+    <div class="flex gap-1.5 mb-2">
+        <div class="flex-1">
+            <div class="text-[10px] text-[#6B5744] mb-1">Diskon %</div>
+            <input
+                type="number"
+                min="0"
+                max="100"
+                bind:value={$cart.percentDiscount}
+                class="w-full bg-[#1A120B] border-[1.5px] border-[#3D2B1F] rounded-md h-7 px-2 text-[12px] {$cart.percentDiscount > 0 ? 'text-[#4ade80]' : 'text-[#E8C9A8]'}"
+            />
+        </div>
+        <div class="flex-1">
+            <div class="text-[10px] text-[#6B5744] mb-1">Diskon Rp</div>
+            <input
+                type="number"
+                min="0"
+                bind:value={$cart.fixedDiscount}
+                class="w-full bg-[#1A120B] border-[1.5px] border-[#3D2B1F] rounded-md h-7 px-2 text-[12px] text-[#E8C9A8]"
+            />
+        </div>
+    </div>
+
+    {#if discount > 0}
+        <div class="flex justify-between items-center mb-2">
+            <span class="text-[12px] text-[#9C7E63]">Potongan</span>
+            <span class="text-[12px] text-[#4ade80]">– {rupiahFormatter.format(discount)}</span>
+        </div>
+    {/if}
+
+    <button
+        class="w-full flex items-center justify-between py-1 mb-1"
+        onclick={() => { biayaOpen = !biayaOpen }}
+    >
+        <span class="text-[10px] font-bold tracking-widest uppercase text-[#9C7E63]">Biaya Tambahan</span>
+        <div class="flex items-center gap-1.5">
+            <span class="text-[11px] text-[#9C7E63]">{rupiahFormatter.format(additionalTotal)}</span>
+            <svg class="transition-transform {biayaOpen ? 'rotate-180' : ''}" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#6B5744" stroke-width="2" stroke-linecap="round"><path d="m6 9 6 6 6-6"/></svg>
+        </div>
+    </button>
+    {#if biayaOpen}
+        <div class="flex flex-col gap-1 mb-2">
+            {#each [['packaging', 'Packaging'], ['transport', 'Transport'], ['modification', 'Modifikasi']] as [field, label]}
+                <div class="flex items-center gap-1.5">
+                    <span class="text-[11px] text-[#6B5744] w-18 shrink-0">{label}</span>
+                    <input
+                        type="number"
+                        min="0"
+                        bind:value={$cart.additionalCosts[field as 'packaging' | 'transport' | 'modification']}
+                        class="flex-1 bg-[#1A120B] border-[1.5px] border-[#3D2B1F] rounded-md h-6 px-2 text-[11px] text-[#E8C9A8]"
+                    />
+                </div>
+            {/each}
+        </div>
+    {/if}
+
+    <hr class="border-[#3D2B1F] mt-1 mb-2" />
+
+    <div class="flex justify-between items-center pt-1">
+        <span class="text-[12px] font-bold text-[#C2622A] uppercase tracking-widest">Total</span>
+        <span class="text-[20px] font-bold text-[#C2622A] tracking-tight">{rupiahFormatter.format(total)}</span>
+    </div>
+
+    <button
+        onclick={() => { if ($cart.items.length > 0) payModalOpen = true }}
+        disabled={$cart.items.length === 0}
+        class="w-full h-10 mt-2.5 bg-[#C2622A] disabled:opacity-40 disabled:cursor-not-allowed rounded-lg text-white text-[13px] font-bold flex items-center justify-center gap-2"
+    >
+        Bayar Sekarang <kbd class="bg-white/20 rounded px-1.5 py-0.5 text-[10px] font-mono">Ctrl+Enter</kbd>
+    </button>
+{/snippet}
+
 <div class="flex gap-3 p-3" style="height: calc(100vh - 62px); margin-top: 62px;">
 
     <!-- LEFT PANE 35% -->
@@ -353,7 +489,8 @@
             {@render searchField()}
         </div>
         <div class="bg-[#2C1E12] border border-[#3D2B1F] rounded-xl p-3.5 flex-1 flex flex-col overflow-hidden">
-            <!-- memberField and pricingPanel added in Task 5 -->
+            {@render memberField()}
+            {@render pricingPanel()}
         </div>
     </div>
 
