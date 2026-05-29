@@ -73,6 +73,13 @@
         }))
     }
 
+    function onWindowKeydown(e: KeyboardEvent) {
+        if (e.ctrlKey && e.key === 'Enter' && isModal) {
+            e.preventDefault()
+            confirm()
+        }
+    }
+
     let canConfirm = $derived(totalPaid >= total && total > 0)
     let hasTunai   = $derived($cart.paymentMethods.some(m => m.method === 'Tunai'))
 
@@ -128,7 +135,7 @@
     }
 </script>
 
-<svelte:window onkeydown={(e) => { if (e.ctrlKey && e.key === 'Enter' && isModal) { e.preventDefault(); confirm() } }} />
+<svelte:window onkeydown={onWindowKeydown} />
 
 <Modal bind:isModal size="lg" title="Konfirmasi Pembayaran">
     <!-- Total box -->

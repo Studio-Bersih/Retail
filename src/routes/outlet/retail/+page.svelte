@@ -1,11 +1,8 @@
 <script lang="ts">
     import { tick } from 'svelte'
-    import { get } from 'svelte/store'
-    import { auth } from '$library/stores/auth'
     import { cart, addItem, setQty, removeItem, setMember, clearMember, clearCart } from '$library/stores/cart'
     import { searchItems, getItemBySku, type MockItem } from '$library/mock/items'
     import { searchMembers, getMemberById, getMemberByPhone, type MockMember } from '$library/mock/members'
-    import { getPaymentProviders } from '$library/mock/payment-methods'
     import { rupiahFormatter } from '$library/utils/formatter'
     import PaymentModal from '$library/components/outlet/retail/PaymentModal.svelte'
 
@@ -473,7 +470,7 @@
     </div>
 
     <button
-        onclick={() => { if ($cart.items.length > 0) payModalOpen = true }}
+        onclick={() => { payModalOpen = true }}
         disabled={$cart.items.length === 0}
         class="w-full h-10 mt-2.5 bg-[#C2622A] disabled:opacity-40 disabled:cursor-not-allowed rounded-lg text-white text-[13px] font-bold flex items-center justify-center gap-2"
     >
