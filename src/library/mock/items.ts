@@ -2,7 +2,7 @@ export interface MockItem {
     id:          string
     sku:         string
     name:        string
-    category:    string
+    category?:   string
     price:       number
     stock:       number
     preAdjDelta: number
@@ -39,7 +39,7 @@ export function searchItems(query: string): MockItem[] {
     return ITEMS.filter(i =>
         i.name.toLowerCase().includes(q) ||
         i.sku.toLowerCase().includes(q) ||
-        i.category.toLowerCase().includes(q)
+        (i.category ?? '').toLowerCase().includes(q)
     )
 }
 

@@ -22,8 +22,7 @@
     let highlightIndex = $state(0)
     let highlightFree  = $state(false)
     let showDropdown   = $state(false)
-    type QtyTarget = Pick<MockItem, 'id' | 'sku' | 'name' | 'price' | 'stock' | 'preAdjDelta'>
-    let qtyItem        = $state<QtyTarget | null>(null)
+    let qtyItem        = $state<MockItem | null>(null)
     let qtyFree        = $state(false)
     let qtyValue       = $state(1)
     let qtyInput: HTMLInputElement
@@ -49,12 +48,6 @@
             ? ($cart.items.find(i => i.id === qtyItem!.id && i.isFree === qtyFree)?.qty ?? 0)
             : 0
     )
-
-    // ── Reset cart selection when items change ────────────────────────────────
-    $effect(() => {
-        void $cart.items.length
-        cartSelectedIndex = -1
-    })
 
     // ── Search debounce ───────────────────────────────────────────────────────
     const SKU_REGEX = /^[A-Z0-9]+-[A-Z0-9]+$/i
@@ -213,7 +206,7 @@
     }
 
     // ── Search helpers ────────────────────────────────────────────────────────
-    function openQtyPrompt(item: QtyTarget, free: boolean) {
+    function openQtyPrompt(item: MockItem, free: boolean) {
         qtyItem           = item
         qtyFree           = free
         qtyValue          = 1
