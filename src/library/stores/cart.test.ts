@@ -72,7 +72,11 @@ describe('setMember / clearMember', () => {
     it('clears member fields', () => {
         setMember('M01', 'Sari', '0812', true)
         clearMember()
-        expect(get(cart).memberId).toBeNull()
+        const s = get(cart)
+        expect(s.memberId).toBeNull()
+        expect(s.memberName).toBeNull()
+        expect(s.memberPhone).toBeNull()
+        expect(s.isPremiumMember).toBe(false)
     })
 })
 
@@ -85,5 +89,7 @@ describe('clearCart', () => {
         expect(s.items).toHaveLength(0)
         expect(s.memberId).toBeNull()
         expect(s.kategoriAcara).toBe('Private Event')
+        expect(s.paymentMethods).toEqual([{ method: 'Tunai', amount: 0 }])
+        expect(s.additionalCosts).toEqual({ packaging: 0, transport: 0, modification: 0 })
     })
 })

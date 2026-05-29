@@ -19,18 +19,18 @@ export const cart = writable<CartState>(structuredClone(initial))
 
 export function addItem(item: CartItem): void {
     cart.update(state => {
-        const existing = state.items.find(i => i.id === item.id && i.isFree === item.isFree)
-        if (existing) {
-            return {
-                ...state,
-                items: state.items.map(i =>
-                    i.id === item.id && i.isFree === item.isFree
-                        ? { ...i, qty: i.qty + item.qty }
-                        : i
-                )
+        let merged = false
+        const items = state.items.map(i => {
+            if (i.id === item.id && i.isFree === item.isFree) {
+                merged = true
+                return { ...i, qty: i.qty + item.qty }
             }
+            return i
+        })
+        if (!merged) {
+            items.push(item)
         }
-        return { ...state, items: [...state.items, item] }
+        return { ...state, items }
     })
 }
 
