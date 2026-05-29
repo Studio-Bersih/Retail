@@ -1,4 +1,368 @@
-<div class="p-6">
-    <h1 class="text-2xl font-bold text-[var(--text)]">Retail</h1>
-    <p class="text-[var(--text-muted)] mt-1 text-sm">Transaksi langsung & kasir.</p>
+<script lang="ts">
+    import { tick } from 'svelte'
+    import { get } from 'svelte/store'
+    import { auth } from '$library/stores/auth'
+    import { cart, addItem, setQty, removeItem, setMember, clearMember, clearCart } from '$library/stores/cart'
+    import { searchItems, getItemBySku, type MockItem } from '$library/mock/items'
+    import { searchMembers, getMemberById, getMemberByPhone, type MockMember } from '$library/mock/members'
+    import { getPaymentProviders } from '$library/mock/payment-methods'
+    import { rupiahFormatter } from '$library/utils/formatter'
+    import PaymentModal from '$library/components/outlet/retail/PaymentModal.svelte'
+
+    // ── Search state ────────────────────────────────────
+    let searchInput: HTMLInputElement
+    let searchValue    = $state('')
+    let searchResults  = $state<MockItem[]>([])
+    let highlightIndex = $state(0)
+    let highlightFree  = $state(false)
+    let showDropdown   = $state(false)
+    let qtyItem        = $state<MockItem | null>(null)
+    let qtyFree        = $state(false)
+    let qtyValue       = $state(1)
+    let qtyInput: HTMLInputElement
+
+    // ── Member state ────────────────────────────────────
+    let memberValue        = $state('')
+    let memberResults      = $state<MockMember[]>([])
+    let memberHighlight    = $state(0)
+    let showMemberDropdown = $state(false)
+    let memberSelected     = $state(false)
+
+    // ── Payment modal ───────────────────────────────────
+    let payModalOpen = $state(false)
+
+    // ── Pricing ─────────────────────────────────────────
+    let biayaOpen = $state(true)
+
+    // ── Derived values ───────────────────────────────────
+    let subtotal        = $derived($cart.items.filter(i => !i.isFree).reduce((s, i) => s + i.price * i.qty, 0))
+    let discount        = $derived(subtotal * $cart.percentDiscount / 100 + $cart.fixedDiscount)
+    let additionalTotal = $derived($cart.additionalCosts.packaging + $cart.additionalCosts.transport + $cart.additionalCosts.modification)
+    let total           = $derived(Math.max(0, subtotal - discount + additionalTotal))
+    let totalPaid       = $derived($cart.paymentMethods.reduce((s, m) => s + m.amount, 0))
+    let kembalian       = $derived(totalPaid - total)
+
+    // ── Search debounce ──────────────────────────────────
+    const SKU_REGEX = /^[A-Z0-9]+-[A-Z0-9]+$/i
+
+    $effect(() => {
+        const val = searchValue.trim()
+        if (!val) {
+            searchResults = []
+            showDropdown  = false
+            qtyItem       = null
+            return
+        }
+        if (qtyItem !== null) {
+            return
+        }
+        if (SKU_REGEX.test(val)) {
+            const found = getItemBySku(val)
+            if (found) {
+                openQtyPrompt(found, false)
+            }
+            return
+        }
+        const timer = setTimeout(() => {
+            searchResults  = searchItems(val)
+            highlightIndex = 0
+            highlightFree  = false
+            showDropdown   = searchResults.length > 0
+        }, 300)
+        return () => clearTimeout(timer)
+    })
+
+    // ── Member debounce ──────────────────────────────────
+    const ID_REGEX    = /^MBR-/i
+    const PHONE_REGEX = /^\d{8,}$/
+
+    $effect(() => {
+        const val = memberValue.trim()
+        if (!val || memberSelected) {
+            return
+        }
+        if (ID_REGEX.test(val)) {
+            const found = getMemberById(val)
+            if (found) {
+                selectMember(found)
+            }
+            return
+        }
+        if (PHONE_REGEX.test(val.replace(/\D/g, ''))) {
+            const found = getMemberByPhone(val)
+            if (found) {
+                selectMember(found)
+            }
+            return
+        }
+        const timer = setTimeout(() => {
+            memberResults      = searchMembers(val)
+            memberHighlight    = 0
+            showMemberDropdown = true
+        }, 300)
+        return () => clearTimeout(timer)
+    })
+
+    // ── Keyboard handlers ────────────────────────────────
+    function onSearchKey(e: KeyboardEvent) {
+        if (qtyItem !== null) {
+            if (e.key === 'Enter') {
+                e.preventDefault()
+                confirmQty()
+            }
+            if (e.key === 'Escape') {
+                e.preventDefault()
+                closeQtyPrompt()
+            }
+            return
+        }
+        if (!showDropdown) {
+            return
+        }
+        if (e.key === 'ArrowDown') {
+            e.preventDefault()
+            highlightIndex = Math.min(highlightIndex + 1, searchResults.length - 1)
+            highlightFree  = false
+        }
+        if (e.key === 'ArrowUp') {
+            e.preventDefault()
+            highlightIndex = Math.max(highlightIndex - 1, 0)
+            highlightFree  = false
+        }
+        if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+            e.preventDefault()
+            highlightFree = !highlightFree
+        }
+        if (e.key === 'Enter') {
+            e.preventDefault()
+            const item = searchResults[highlightIndex]
+            if (item) {
+                openQtyPrompt(item, highlightFree)
+            }
+        }
+        if (e.key === 'Escape') {
+            e.preventDefault()
+            closeSearch()
+        }
+    }
+
+    function onMemberKey(e: KeyboardEvent) {
+        if (!showMemberDropdown) {
+            return
+        }
+        if (e.key === 'ArrowDown') {
+            e.preventDefault()
+            memberHighlight = Math.min(memberHighlight + 1, memberResults.length - 1)
+        }
+        if (e.key === 'ArrowUp') {
+            e.preventDefault()
+            memberHighlight = Math.max(memberHighlight - 1, 0)
+        }
+        if (e.key === 'Enter') {
+            e.preventDefault()
+            const m = memberResults[memberHighlight]
+            if (m) {
+                selectMember(m)
+            }
+        }
+        if (e.key === 'Escape') {
+            e.preventDefault()
+            memberValue        = ''
+            memberResults      = []
+            showMemberDropdown = false
+        }
+    }
+
+    // ── Global keyboard shortcuts ─────────────────────────
+    function onWindowKeydown(e: KeyboardEvent) {
+        if (e.ctrlKey && e.key === 'Enter') {
+            e.preventDefault()
+            if ($cart.items.length > 0 && !payModalOpen) {
+                payModalOpen = true
+            }
+        }
+    }
+
+    // ── Search helpers ────────────────────────────────────
+    function openQtyPrompt(item: MockItem, free: boolean) {
+        qtyItem      = item
+        qtyFree      = free
+        qtyValue     = 1
+        showDropdown = false
+        tick().then(() => { qtyInput?.focus(); qtyInput?.select() })
+    }
+
+    function closeQtyPrompt() {
+        qtyItem      = null
+        showDropdown = searchResults.length > 0
+        tick().then(() => searchInput?.focus())
+    }
+
+    function closeSearch() {
+        searchValue   = ''
+        searchResults = []
+        showDropdown  = false
+        qtyItem       = null
+        tick().then(() => searchInput?.focus())
+    }
+
+    function confirmQty() {
+        if (!qtyItem) {
+            return
+        }
+        addItem({
+            id:          qtyItem.id,
+            name:        qtyItem.name,
+            sku:         qtyItem.sku,
+            price:       qtyFree ? 0 : qtyItem.price,
+            qty:         qtyValue,
+            isFree:      qtyFree,
+            stock:       qtyItem.stock,
+            preAdjDelta: qtyItem.preAdjDelta,
+        })
+        closeSearch()
+    }
+
+    // ── Member helpers ────────────────────────────────────
+    function selectMember(m: MockMember) {
+        setMember(m.id, m.name, m.phone, m.isPremium)
+        memberSelected     = true
+        memberValue        = m.name
+        memberResults      = []
+        showMemberDropdown = false
+    }
+
+    function onClearMember() {
+        clearMember()
+        memberSelected = false
+        memberValue    = ''
+    }
+
+    // ── Row numbering ─────────────────────────────────────
+    function rowNumber(index: number): string {
+        return `#${index + 1}`
+    }
+
+    // Already-in-cart qty for qty prompt indicator
+    let alreadyQty = $derived(
+        qtyItem
+            ? ($cart.items.find(i => i.id === qtyItem!.id && i.isFree === qtyFree)?.qty ?? 0)
+            : 0
+    )
+</script>
+
+<svelte:window onkeydown={onWindowKeydown} />
+
+{#snippet searchField()}
+    <div class="text-[10px] font-bold tracking-widest uppercase text-[#9C7E63] mb-1.5">Cari Produk</div>
+    <div class="relative">
+        <svg class="absolute left-2.5 top-1/2 -translate-y-1/2 text-[#6B5744]" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+        <input
+            bind:this={searchInput}
+            bind:value={searchValue}
+            onkeydown={onSearchKey}
+            class="w-full bg-[#1A120B] border-[1.5px] border-[#C2622A] rounded-lg pl-8 pr-3 h-9 text-sm text-[#E8C9A8] outline-none shadow-[0_0_0_3px_rgba(194,98,42,0.12)]"
+            placeholder="SKU atau nama produk..."
+            autocomplete="off"
+        />
+
+        {#if qtyItem}
+            <div class="absolute top-[calc(100%+4px)] left-0 right-0 bg-[#2C1E12] border-[1.5px] {qtyFree ? 'border-[rgba(74,222,128,0.4)]' : 'border-[rgba(194,98,42,0.5)]'} rounded-xl shadow-2xl z-50 p-3">
+                <div class="text-sm font-bold {qtyFree ? 'text-[#4ade80]' : 'text-[#E8C9A8]'} mb-0.5">{qtyItem.name}</div>
+                <div class="text-[10px] text-[#6B5744] font-mono mb-1.5">{qtyItem.sku} · {qtyFree ? 'GRATIS' : rupiahFormatter.format(qtyItem.price)}</div>
+                {#if alreadyQty > 0}
+                    <div class="text-[11px] text-[#4ade80] mb-2 flex items-center gap-1.5">
+                        <span class="w-1.5 h-1.5 rounded-full bg-[#4ade80] inline-block"></span>
+                        Sudah di keranjang: {alreadyQty} pcs
+                    </div>
+                {/if}
+                <div class="text-[10px] font-bold tracking-widest uppercase text-[#9C7E63] mb-1">Jumlah</div>
+                <div class="flex items-center gap-2 mb-2">
+                    <input
+                        bind:this={qtyInput}
+                        bind:value={qtyValue}
+                        type="number"
+                        min="1"
+                        onkeydown={onSearchKey}
+                        class="flex-1 bg-[#1A120B] border-[1.5px] {qtyFree ? 'border-[#4ade80] text-[#4ade80]' : 'border-[#C2622A] text-[#E8C9A8]'} rounded-lg h-10 text-xl font-bold text-center outline-none"
+                    />
+                    <span class="text-[11px] text-[#9C7E63]">pcs</span>
+                </div>
+                <div class="flex items-center justify-between">
+                    <span class="text-[10px] text-[#4D3826] font-mono">Esc → kembali ke daftar</span>
+                    <button
+                        onclick={confirmQty}
+                        class="flex items-center gap-1.5 {qtyFree ? 'bg-[rgba(74,222,128,0.18)] text-[#4ade80] border border-[rgba(74,222,128,0.3)]' : 'bg-[#C2622A] text-white'} text-[11px] font-bold px-3 h-7 rounded-md"
+                    >
+                        {qtyFree ? 'Tambah GRATIS' : 'Tambah ke keranjang'} <kbd class="bg-white/20 rounded px-1 text-[9px] font-mono">Enter</kbd>
+                    </button>
+                </div>
+            </div>
+        {:else if showDropdown}
+            <div class="absolute top-[calc(100%+4px)] left-0 right-0 bg-[#2C1E12] border-[1.5px] border-[#3D2B1F] rounded-xl shadow-2xl z-50 overflow-hidden">
+                <div class="flex items-center justify-between px-2.5 py-1.5 border-b border-[#3D2B1F]">
+                    <span class="text-[9px] text-[#4D3826] font-mono">↑↓ pindah · ◄► BAYAR/GRATIS · Enter pilih · Esc tutup</span>
+                    <span class="text-[9px] text-[#4D3826]">{searchResults.length} hasil</span>
+                </div>
+                {#each searchResults as item, i}
+                    {@const isActive = i === highlightIndex}
+                    {@const showFree = isActive && highlightFree}
+                    <button
+                        class="w-full text-left px-2.5 py-2 border-b border-[#3D2B1F]/20 last:border-0 transition-colors {isActive ? (showFree ? 'bg-[rgba(74,222,128,0.07)]' : 'bg-[rgba(194,98,42,0.1)]') : 'hover:bg-[#3D2B1F]/30'}"
+                        onclick={() => openQtyPrompt(item, showFree)}
+                    >
+                        <div class="flex items-start justify-between gap-2">
+                            <div>
+                                <div class="text-[12px] font-semibold {showFree ? 'text-[#4ade80]' : 'text-[#E8C9A8]'}">{item.name}</div>
+                                <div class="text-[10px] text-[#6B5744] font-mono mt-0.5">{item.sku}</div>
+                                <div class="text-[10px] text-[#9C7E63] mt-0.5">Stok: {item.stock} pcs</div>
+                            </div>
+                            <div class="text-[12px] font-bold {showFree ? 'text-[#4ade80]' : 'text-[#C2622A]'} whitespace-nowrap">
+                                {showFree ? 'GRATIS' : rupiahFormatter.format(item.price)}
+                            </div>
+                        </div>
+                        {#if isActive}
+                            <div class="flex mt-1.5 rounded overflow-hidden border border-[#3D2B1F] text-[10px] font-bold">
+                                <div class="flex-1 h-5 flex items-center justify-center gap-1 {!showFree ? 'bg-[#C2622A] text-white' : 'text-[#4D3826]'}">
+                                    <span class="text-[9px]">◄</span> BAYAR
+                                </div>
+                                <div class="flex-1 h-5 flex items-center justify-center gap-1 border-l border-[#3D2B1F] {showFree ? 'bg-[rgba(74,222,128,0.18)] text-[#4ade80]' : 'text-[#4D3826]'}">
+                                    GRATIS <span class="text-[9px]">►</span>
+                                </div>
+                            </div>
+                        {/if}
+                    </button>
+                {/each}
+            </div>
+        {/if}
+    </div>
+    <div class="flex items-center justify-between mt-2">
+        <div class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-[rgba(194,98,42,0.12)] text-[#C2622A] border border-[rgba(194,98,42,0.2)]">
+            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4Z"/><line x1="3" x2="21" y1="6" y2="6"/></svg>
+            Mode Retail
+        </div>
+        <span class="text-[10px] text-[#4D3826]">Auto-focus setelah tambah</span>
+    </div>
+{/snippet}
+
+<div class="flex gap-3 p-3" style="height: calc(100vh - 62px); margin-top: 62px;">
+
+    <!-- LEFT PANE 35% -->
+    <div class="w-[35%] flex flex-col gap-2 min-w-0">
+        <div class="bg-[#2C1E12] border border-[#3D2B1F] rounded-xl p-3.5 overflow-visible relative">
+            {@render searchField()}
+        </div>
+        <div class="bg-[#2C1E12] border border-[#3D2B1F] rounded-xl p-3.5 flex-1 flex flex-col overflow-hidden">
+            <!-- memberField and pricingPanel added in Task 5 -->
+        </div>
+    </div>
+
+    <!-- RIGHT PANE 65% -->
+    <div class="w-[65%] flex flex-col gap-2 min-w-0">
+        <div class="bg-[#2C1E12] border border-[#3D2B1F] rounded-xl p-3.5 flex-1 flex flex-col overflow-hidden">
+            <!-- cartRows added in Task 6 -->
+        </div>
+    </div>
 </div>
+
+<PaymentModal bind:isModal={payModalOpen} {total} {totalPaid} {kembalian} />
