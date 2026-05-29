@@ -481,6 +481,101 @@
     </button>
 {/snippet}
 
+{#snippet cartRows()}
+    <div class="flex items-center justify-between mb-2.5 shrink-0">
+        <div class="flex items-center gap-2">
+            <span class="text-[10px] font-bold tracking-widest uppercase text-[#9C7E63]">Keranjang</span>
+            {#if $cart.items.length > 0}
+                <span class="text-[10px] bg-[rgba(194,98,42,0.12)] text-[#C2622A] rounded-full px-2 py-0.5 font-bold">
+                    {$cart.items.length} baris · {$cart.items.reduce((s, i) => s + i.qty, 0)} pcs
+                </span>
+            {/if}
+        </div>
+        {#if $cart.items.length > 0}
+            <button onclick={clearCart} class="text-[10px] text-[#6B5744] hover:text-[#f87171] transition-colors">Kosongkan</button>
+        {/if}
+    </div>
+
+    <div class="grid gap-2 px-2.5 pb-1.5 border-b border-[#3D2B1F] shrink-0" style="grid-template-columns: 1fr 96px 88px 22px;">
+        <span class="text-[10px] font-bold tracking-widest uppercase text-[#6B5744]">Produk</span>
+        <span class="text-[10px] font-bold tracking-widest uppercase text-[#6B5744] text-center">Qty</span>
+        <span class="text-[10px] font-bold tracking-widest uppercase text-[#6B5744] text-right">Subtotal</span>
+        <span></span>
+    </div>
+
+    <div class="flex-1 overflow-y-auto pt-1 pl-5" style="scrollbar-width: thin; scrollbar-color: #3D2B1F transparent;">
+        {#if $cart.items.length === 0}
+            <div class="flex flex-col items-center justify-center h-full text-[#4D3826] gap-2">
+                <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4Z"/><line x1="3" x2="21" y1="6" y2="6"/><path d="M16 10a4 4 0 0 1-8 0"/></svg>
+                <span class="text-[12px]">Keranjang kosong</span>
+                <span class="text-[11px]">Ketik SKU atau nama produk untuk mulai</span>
+            </div>
+        {:else}
+            {#each $cart.items as item, i}
+                {@const isPrevSame = i > 0 && $cart.items[i - 1].id === item.id && item.isFree}
+                {#if isPrevSame}
+                    <div class="mx-2.5 my-0" style="height:1px; background: repeating-linear-gradient(90deg, #3D2B1F 0, #3D2B1F 4px, transparent 4px, transparent 8px);"></div>
+                {:else if i > 0}
+                    <div class="h-1"></div>
+                {/if}
+                <div
+                    class="relative grid gap-2 items-center px-2.5 py-2 rounded-lg transition-colors {item.isFree ? 'bg-[rgba(74,222,128,0.04)] hover:bg-[rgba(74,222,128,0.08)]' : 'hover:bg-[#3D2B1F]/30'}"
+                    style="grid-template-columns: 1fr 96px 88px 22px;"
+                >
+                    <span class="absolute -left-4 top-1/2 -translate-y-1/2 text-[9px] font-bold font-mono {item.isFree ? 'text-[rgba(74,222,128,0.4)]' : 'text-[#4D3826]'}">
+                        {rowNumber(i)}
+                    </span>
+
+                    <div>
+                        <div class="text-[13px] font-semibold truncate {item.isFree ? 'text-[#4ade80]' : 'text-[#E8C9A8]'}">{item.name}</div>
+                        <div class="text-[10px] font-mono {item.isFree ? 'text-[rgba(74,222,128,0.4)]' : 'text-[#4D3826]'} mt-0.5">{item.sku}</div>
+                        {#if item.isFree}
+                            <div class="mt-1">
+                                <span class="text-[9px] font-bold text-[#4ade80] bg-[rgba(74,222,128,0.12)] rounded px-1 py-0.5">GRATIS</span>
+                            </div>
+                        {/if}
+                        <div class="flex items-center gap-1.5 mt-1 text-[10px] text-[#6B5744]">
+                            <span>Stok:</span>
+                            <span class="font-semibold {item.stock <= 5 ? 'text-[#fbbf24]' : 'text-[#9C7E63]'}">{item.stock} pcs</span>
+                            {#if item.stock <= 5}
+                                <span class="text-[9px] text-[#fbbf24] bg-[rgba(251,191,36,0.1)] rounded px-1">⚠ hampir habis</span>
+                            {/if}
+                            {#if item.preAdjDelta !== 0}
+                                <span class="text-[9px] rounded px-1 {item.preAdjDelta > 0 ? 'text-[#4ade80] bg-[rgba(74,222,128,0.1)]' : 'text-[#f87171] bg-[rgba(248,113,113,0.1)]'}">
+                                    pre-adj {item.preAdjDelta > 0 ? '+' : ''}{item.preAdjDelta}
+                                </span>
+                            {/if}
+                        </div>
+                    </div>
+
+                    <div class="flex items-center gap-1 justify-center">
+                        <button
+                            onclick={() => setQty(item.id, item.isFree, item.qty - 1)}
+                            class="w-5 h-5 bg-[#1A120B] border {item.isFree ? 'border-[rgba(74,222,128,0.2)] hover:border-[#4ade80] hover:text-[#4ade80]' : 'border-[#3D2B1F] hover:border-[#C2622A] hover:text-[#C2622A]'} rounded text-[#9C7E63] flex items-center justify-center text-sm font-semibold leading-none shrink-0"
+                        >−</button>
+                        <span class="text-[13px] font-bold min-w-6 text-center {item.isFree ? 'text-[#4ade80]' : 'text-[#E8C9A8]'}">{item.qty}</span>
+                        <button
+                            onclick={() => setQty(item.id, item.isFree, item.qty + 1)}
+                            class="w-5 h-5 bg-[#1A120B] border {item.isFree ? 'border-[rgba(74,222,128,0.2)] hover:border-[#4ade80] hover:text-[#4ade80]' : 'border-[#3D2B1F] hover:border-[#C2622A] hover:text-[#C2622A]'} rounded text-[#9C7E63] flex items-center justify-center text-sm font-semibold leading-none shrink-0"
+                        >+</button>
+                    </div>
+
+                    <div class="text-right {item.isFree ? 'text-[11px] font-bold text-[#4ade80]' : 'text-[13px] font-semibold text-[#E8C9A8]'}">
+                        {item.isFree ? 'GRATIS' : rupiahFormatter.format(item.price * item.qty)}
+                    </div>
+
+                    <button
+                        onclick={() => removeItem(item.id, item.isFree)}
+                        class="w-5 h-5 rounded flex items-center justify-center text-[#4D3826] hover:bg-[rgba(185,64,64,0.15)] hover:text-[#f87171] transition-colors"
+                    >
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
+                    </button>
+                </div>
+            {/each}
+        {/if}
+    </div>
+{/snippet}
+
 <div class="flex gap-3 p-3" style="height: calc(100vh - 62px); margin-top: 62px;">
 
     <!-- LEFT PANE 35% -->
@@ -497,7 +592,7 @@
     <!-- RIGHT PANE 65% -->
     <div class="w-[65%] flex flex-col gap-2 min-w-0">
         <div class="bg-[#2C1E12] border border-[#3D2B1F] rounded-xl p-3.5 flex-1 flex flex-col overflow-hidden">
-            <!-- cartRows added in Task 6 -->
+            {@render cartRows()}
         </div>
     </div>
 </div>
