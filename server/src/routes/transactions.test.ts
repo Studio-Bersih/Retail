@@ -135,6 +135,8 @@ describe('POST /api/transactions', () => {
     })
 
     it('saves kategoriAcara when provided', async () => {
+        const [before] = await db.select({ stock: outletStock.stock }).from(outletStock).where(eq(outletStock.id, testStockRowId))
+
         const idempotencyKey = crypto.randomUUID()
         const response = await app.handle(
             new Request('http://localhost/api/transactions', {
@@ -166,6 +168,7 @@ describe('POST /api/transactions', () => {
         await db.delete(transactionPayments).where(eq(transactionPayments.transactionId, data.id))
         await db.delete(transactionItems).where(eq(transactionItems.transactionId, data.id))
         await db.delete(transactions).where(eq(transactions.id, data.id))
+        await db.update(outletStock).set({ stock: before.stock }).where(eq(outletStock.id, testStockRowId))
     })
 
     it('returns the same response for a duplicate idempotency key', async () => {
