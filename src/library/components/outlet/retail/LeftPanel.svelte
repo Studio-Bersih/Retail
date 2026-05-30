@@ -212,6 +212,7 @@
             memberValue        = ''
             memberResults      = []
             showMemberDropdown = false
+            tick().then(() => searchInput?.focus())
         }
     }
 
@@ -282,7 +283,7 @@
                 bind:value={searchValue}
                 onkeydown={onSearchKey}
                 class="w-full bg-base-300 border-[1.5px] border-primary rounded-lg pl-8 pr-3 h-9 text-sm text-[var(--text)] outline-none shadow-[0_0_0_3px_var(--primary-dim)]"
-                placeholder="SKU atau nama produk..."
+                placeholder="SKU atau nama produk... [ESC]"
                 autocomplete="off"
             />
 
