@@ -270,7 +270,15 @@
         memberSelected = false
         memberValue    = ''
     }
+
+    function onGlobalKeydown(e: KeyboardEvent) {
+        if (e.key === 'Escape' && !payModalOpen) {
+            searchInput?.focus()
+        }
+    }
 </script>
+
+<svelte:window onkeydown={onGlobalKeydown} />
 
 <div class="w-[35%] flex flex-col gap-2 min-w-0">
     <!-- Search card -->
