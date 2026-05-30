@@ -273,7 +273,13 @@
 
     function onGlobalKeydown(e: KeyboardEvent) {
         if (e.key === 'Escape' && !payModalOpen) {
-            searchInput?.focus()
+            const isIdleOnSearch = document.activeElement === searchInput
+                && searchValue === ''
+                && !qtyItem
+                && !showDropdown
+            if (!isIdleOnSearch) {
+                searchInput?.focus()
+            }
         }
     }
 </script>
