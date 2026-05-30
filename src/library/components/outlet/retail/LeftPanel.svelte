@@ -127,12 +127,22 @@
         if (!showDropdown) {
             if (e.key === 'ArrowDown' && $cart.items.length > 0) {
                 e.preventDefault()
-                cartSelectedIndex = cartSelectedIndex < $cart.items.length - 1 ? cartSelectedIndex + 1 : 0
+                const newIndex = cartSelectedIndex < $cart.items.length - 1 ? cartSelectedIndex + 1 : 0
+                cartSelectedIndex = newIndex
+                const item = $cart.items[newIndex]
+                if (item) {
+                    openQtyPrompt(item, item.isFree)
+                }
                 return
             }
             if (e.key === 'ArrowUp' && $cart.items.length > 0) {
                 e.preventDefault()
-                cartSelectedIndex = cartSelectedIndex > 0 ? cartSelectedIndex - 1 : $cart.items.length - 1
+                const newIndex = cartSelectedIndex > 0 ? cartSelectedIndex - 1 : $cart.items.length - 1
+                cartSelectedIndex = newIndex
+                const item = $cart.items[newIndex]
+                if (item) {
+                    openQtyPrompt(item, item.isFree)
+                }
                 return
             }
             if (e.key === 'Enter' && cartSelectedIndex >= 0) {
@@ -207,11 +217,10 @@
 
     // ── Search helpers ────────────────────────────────────────────────────────
     function openQtyPrompt(item: MockItem, free: boolean) {
-        qtyItem           = item
-        qtyFree           = free
-        qtyValue          = 1
-        showDropdown      = false
-        cartSelectedIndex = -1
+        qtyItem      = item
+        qtyFree      = free
+        qtyValue     = 1
+        showDropdown = false
         tick().then(() => { qtyInput?.focus(); qtyInput?.select() })
     }
 
