@@ -1,1 +1,0 @@
-CREATE UNIQUE INDEX "shifts_outlet_date_idx" ON "shifts" USING btree ("outlet_id","date");
