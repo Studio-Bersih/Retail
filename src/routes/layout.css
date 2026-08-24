@@ -1,0 +1,10 @@
+@import 'tailwindcss';
+@plugin '@tailwindcss/typography';
+
+/* daisyUI 5 — component classes on top of Tailwind.
+   Themes are opt-in: name each one you want available, and the browser picks
+   between light and dark from the `prefersdark` / `default` flags below.
+   Switch manually with <html data-theme="dark">. */
+@plugin 'daisyui' {
+  themes: light --default, dark --prefersdark;
+}
