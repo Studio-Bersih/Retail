@@ -22,8 +22,8 @@ DROP TRIGGER IF EXISTS `trg_kuota_outlet_insert`;
 DROP TRIGGER IF EXISTS `trg_kuota_outlet_update`;
 DROP VIEW  IF EXISTS `subscription`;
 DROP VIEW  IF EXISTS `payment`;
-DROP TABLE IF EXISTS `sy_detail_payment`;
-DROP TABLE IF EXISTS `sy_rekap_payment`;
+DROP TABLE IF EXISTS `sy_payment_detail`;
+DROP TABLE IF EXISTS `sy_payment_rekap`;
 DROP TABLE IF EXISTS `sy_subscription`;
 DROP TABLE IF EXISTS `sy_pricing`;
 SET FOREIGN_KEY_CHECKS = 1;
@@ -93,7 +93,7 @@ CREATE TABLE `sy_subscription` (
 -- §5.3  Payments — the truth that sy_subscription caches.
 -- ============================================================
 
-CREATE TABLE `sy_rekap_payment` (
+CREATE TABLE `sy_payment_rekap` (
   `id`             BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
   `perusahaan_id`  BIGINT UNSIGNED NOT NULL,
   `nomor`          VARCHAR(30)     NOT NULL,
@@ -120,7 +120,7 @@ CREATE TABLE `sy_rekap_payment` (
   COMMENT='One row per renewal. Header of a real document, hence rekap/detail.';
 
 
-CREATE TABLE `sy_detail_payment` (
+CREATE TABLE `sy_payment_detail` (
   `id`              BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
   `perusahaan_id`   BIGINT UNSIGNED NOT NULL
                       COMMENT 'carried per CLAUDE.md §4 though derivable via rekap_id',
@@ -135,14 +135,14 @@ CREATE TABLE `sy_detail_payment` (
   `subtotal`        DECIMAL(15,2)   NOT NULL,
   `created_at`      TIMESTAMP       NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
-  KEY `ix_detail_payment_rekap` (`rekap_id`),
-  KEY `ix_detail_payment_perusahaan` (`perusahaan_id`),
-  CONSTRAINT `fk_detail_payment_rekap` FOREIGN KEY (`rekap_id`)
-    REFERENCES `sy_rekap_payment` (`id`) ON UPDATE RESTRICT ON DELETE RESTRICT,
-  CONSTRAINT `fk_detail_payment_perusahaan` FOREIGN KEY (`perusahaan_id`)
+  KEY `ix_payment_detail_rekap` (`rekap_id`),
+  KEY `ix_payment_detail_perusahaan` (`perusahaan_id`),
+  CONSTRAINT `fk_payment_detail_rekap` FOREIGN KEY (`rekap_id`)
+    REFERENCES `sy_payment_rekap` (`id`) ON UPDATE RESTRICT ON DELETE RESTRICT,
+  CONSTRAINT `fk_payment_detail_perusahaan` FOREIGN KEY (`perusahaan_id`)
     REFERENCES `sy_perusahaan` (`id`) ON UPDATE RESTRICT ON DELETE RESTRICT,
-  CONSTRAINT `ck_detail_payment_positif` CHECK (`jumlah` > 0 AND `bulan` > 0),
-  CONSTRAINT `ck_detail_payment_subtotal`
+  CONSTRAINT `ck_payment_detail_positif` CHECK (`jumlah` > 0 AND `bulan` > 0),
+  CONSTRAINT `ck_payment_detail_subtotal`
     CHECK (`subtotal` = `jumlah` * `bulan` * `harga_per_bulan`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
   COMMENT='Document lines. harga_per_bulan is snapshotted so raising prices never rewrites history - same principle as the sale line in master-item §7.';
@@ -284,9 +284,9 @@ SELECT
              REPLACE(FORMAT(d.harga_per_bulan, 0), ',', '.'),
              ' = ', REPLACE(FORMAT(d.subtotal, 0), ',', '.'))
       ORDER BY d.id SEPARATOR '  |  ')
-   FROM sy_detail_payment d WHERE d.rekap_id = r.id) AS rincian,
+   FROM sy_payment_detail d WHERE d.rekap_id = r.id) AS rincian,
   COALESCE(r.dicatat_oleh, '-')  AS dicatat_oleh,
   COALESCE(r.catatan, '-')       AS catatan,
   r.perusahaan_id
-FROM sy_rekap_payment r
+FROM sy_payment_rekap r
 JOIN sy_perusahaan per ON per.id = r.perusahaan_id;

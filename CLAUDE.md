@@ -23,33 +23,39 @@ Do not invent alternatives; if a case is not covered here, ask before deviating.
 
 ### 1. Parent/child tables
 
-**Any table that has a child MUST be named `pos_rekap_[feature]`, and its child
-MUST be named `pos_detail_[feature]`.**
+**Any table that has a child MUST be named `pos_[feature]_rekap`, and its child
+MUST be named `pos_[feature]_detail`.**
 
-- `pos_rekap_[feature]` — the document header. One row per transaction.
+- `pos_[feature]_rekap` — the document header. One row per transaction.
   Who, where, when, totals, status.
-- `pos_detail_[feature]` — the document lines. One row per item on that
+- `pos_[feature]_detail` — the document lines. One row per item on that
   transaction, pointing back at the rekap row.
 
-The `[feature]` segment is identical on both halves. It names the business
-document, not the table's role.
+The `[feature]` segment is identical on both halves and comes **first**. It
+names the business document; `rekap` / `detail` says which half it is.
+
+**The feature leads so the two halves sort together.** Any alphabetical listing
+— HeidiSQL's tree, `SHOW TABLES`, a migrations folder — puts
+`pos_konversi_detail` next to `pos_konversi_rekap`. With the role leading, every
+header sat under `r` and every line under `d`, and a feature's two tables were
+never visible at the same time.
 
 | Feature        | Header                | Lines                  |
 | -------------- | --------------------- | ---------------------- |
-| Retail sale    | `pos_rekap_retail`    | `pos_detail_retail`    |
-| Item Masuk     | `pos_rekap_masuk`     | `pos_detail_masuk`     |
-| Item Keluar    | `pos_rekap_keluar`    | `pos_detail_keluar`    |
-| Konversi       | `pos_rekap_konversi`  | `pos_detail_konversi`  |
-| Transfer       | `pos_rekap_transfer`  | `pos_detail_transfer`  |
+| Retail sale    | `pos_retail_rekap`    | `pos_retail_detail`    |
+| Item Masuk     | `pos_masuk_rekap`     | `pos_masuk_detail`     |
+| Item Keluar    | `pos_keluar_rekap`    | `pos_keluar_detail`    |
+| Konversi       | `pos_konversi_rekap`  | `pos_konversi_detail`  |
+| Transfer       | `pos_transfer_rekap`  | `pos_transfer_detail`  |
 
-A table with no child does not take the `rekap`/`detail` prefix.
+A table with no child does not take the `rekap` / `detail` suffix.
 
 **Scope.** This rule governs *transaction documents* — things with a header and
 line items. Master data (`pos_master_*`) and lookups (`pos_*`) are covered by
 §2 instead and never take it, however many tables reference them.
 
 **Outside `pos_`.** The convention also applies to organisational documents,
-with the `sy_` prefix: `sy_rekap_payment` / `sy_detail_payment`. The test is
+with the `sy_` prefix: `sy_payment_rekap` / `sy_payment_detail`. The test is
 whether the thing genuinely has lines — a subscription payment does ("5 outlets
 × 12 months × Rp 50.000"), an audit log does not.
 
@@ -81,7 +87,7 @@ whether the thing genuinely has lines — a subscription payment does ("5 outlet
 ### 3a. The SaaS layer
 
 The vendor-facing subscription layer takes **English table names** —
-`sy_subscription`, `sy_pricing`, `sy_rekap_payment`, `sy_detail_payment` —
+`sy_subscription`, `sy_pricing`, `sy_payment_rekap`, `sy_payment_detail` —
 because these are vendor concepts, not shop-floor ones. The POS domain stays
 Indonesian.
 

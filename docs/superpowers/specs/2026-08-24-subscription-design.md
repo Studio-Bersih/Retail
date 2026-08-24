@@ -59,12 +59,12 @@ to be written into `CLAUDE.md` before they spread.
 
 **Carve-out 1 — English for the SaaS layer.** `CLAUDE.md` §3 requires
 Indonesian domain nouns. The vendor-facing subscription layer uses English
-*table* names (`sy_subscription`, `sy_pricing`, `sy_rekap_payment`) because
+*table* names (`sy_subscription`, `sy_pricing`, `sy_payment_rekap`) because
 these are vendor concepts, not shop-floor ones. **Columns keep §3 unchanged** —
 `berlaku_sampai`, `kuota_outlet`, `harga_per_bulan`, `tanggal`, `jumlah`.
 
 **Carve-out 2 — `rekap`/`detail` outside `pos_`.** §1 mandates
-`pos_rekap_[feature]` / `pos_detail_[feature]` for any table with a child. A
+`pos_[feature]_rekap` / `pos_[feature]_detail` for any table with a child. A
 payment genuinely is a document — the header is one renewal, the lines are
 "5 outlets × Rp 50.000 × 12 months" — so the convention fits, with the `sy_`
 prefix because this is organisational rather than POS data.
@@ -135,7 +135,7 @@ past date. No separate mechanism.
 ### 5.3 Payments
 
 ```sql
-sy_rekap_payment                    -- one row per renewal
+sy_payment_rekap                    -- one row per renewal
   id              BIGINT UNSIGNED PK
   perusahaan_id   -> sy_perusahaan
   nomor           VARCHAR(30)
@@ -151,10 +151,10 @@ sy_rekap_payment                    -- one row per renewal
   UNIQUE(perusahaan_id, nomor)
   INDEX(perusahaan_id, tanggal)
 
-sy_detail_payment                   -- the lines
+sy_payment_detail                   -- the lines
   id              BIGINT UNSIGNED PK
   perusahaan_id   -> sy_perusahaan  -- carried per CLAUDE.md §4, though derivable
-  rekap_id        -> sy_rekap_payment
+  rekap_id        -> sy_payment_rekap
   jenis           ENUM('outlet','karyawan','lainnya')
   keterangan      VARCHAR(150)      -- "Outlet tambahan"
   jumlah          INT               -- 5 SEATS, not a stock quantity. Always whole.
@@ -169,7 +169,7 @@ Raising prices next year must not rewrite what a customer was charged this
 year. This is the same principle as §7 of the master-item design: the sale line
 snapshots the price charged.
 
-**`sy_rekap_payment` is the truth; `sy_subscription` is a cache of it** — the
+**`sy_payment_rekap` is the truth; `sy_subscription` is a cache of it** — the
 same relationship `pos_stok_mutasi` has with `pos_stok_outlet`. Marking a
 payment `lunas` extends the term and sets the quota **in the same transaction**.
 
@@ -278,10 +278,10 @@ NULL` means something has gone wrong and failing closed is correct.
 Standard pricing: outlet Rp 50.000/month, staff Rp 5.000/month.
 
 ```
-sy_rekap_payment   INV-2026-014   2026-08-24   status=lunas
+sy_payment_rekap   INV-2026-014   2026-08-24   status=lunas
                    periode 2026-09-01 .. 2027-08-31      total 4.200.000
 
-sy_detail_payment  outlet     Outlet / cabang    5 x 12 x 50.000 = 3.000.000
+sy_payment_detail  outlet     Outlet / cabang    5 x 12 x 50.000 = 3.000.000
                    karyawan   Staff             20 x 12 x  5.000 = 1.200.000
 
 on lunas, in one transaction:
@@ -326,7 +326,7 @@ Additive; none require reworking the above.
    design ones. §6.5 requires *some* value; the numbers are yours to set.
 
 3. **Pro-rata for mid-term seat additions.** The design supports it —
-   `sy_detail_payment.bulan` can be 5 as easily as 12 — but the rounding rule
+   `sy_payment_detail.bulan` can be 5 as easily as 12 — but the rounding rule
    (part months up, down, or by day) is unstated.
 
 4. **Renewal reminders.** With hard lock, no dunning, and the company admin

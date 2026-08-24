@@ -1,5 +1,32 @@
 # Changelog
 
+## 2026-08-24 — Rename: the feature leads, rekap/detail follows
+
+`pos_rekap_[feature]` / `pos_detail_[feature]` becomes
+**`pos_[feature]_rekap` / `pos_[feature]_detail`**, so a feature's two halves
+sort next to each other. Under the old order every header sat under `r` and
+every line under `d`, and a document's two tables were never visible at once.
+
+### Renamed
+
+- `sy_rekap_payment` → `sy_payment_rekap`
+- `sy_detail_payment` → `sy_payment_detail`
+- Their constraints and indexes follow the table: `fk_payment_detail_rekap`,
+  `ck_payment_detail_subtotal`, and so on.
+- The contract-only tables in master-item §5.7 — `pos_masuk_rekap` /
+  `pos_masuk_detail` and the four other pairs. None are built yet, so this is
+  a documentation change for them.
+
+### Notes
+
+- `pos_stok_mutasi.rekap_tipe` is unaffected: its values are feature names
+  (`masuk`, `konversi`, …), not table names.
+- `CLAUDE.md` §1 now records why the feature leads, and calls `rekap`/`detail`
+  a suffix rather than a prefix.
+- Verified by a full rebuild: schema, subscription layer, faker, views, then
+  both check suites — POS core assertions and 16 of 16 subscription assertions.
+
+
 ## 2026-08-24 — Subscription and entitlement
 
 Implements `docs/superpowers/specs/2026-08-24-subscription-design.md`.
@@ -7,7 +34,7 @@ Implements `docs/superpowers/specs/2026-08-24-subscription-design.md`.
 ### Added
 
 - `database/05_subscription.sql` — four tables (`sy_pricing`, `sy_subscription`,
-  `sy_rekap_payment`, `sy_detail_payment`), four quota triggers, two reading
+  `sy_payment_rekap`, `sy_payment_detail`), four quota triggers, two reading
   views (`subscription`, `payment`), and the seeded flat price list:
   Rp 50.000/month per outlet, Rp 5.000/month per staff.
 - `database/06_subscription_check.php` — 16 assertions, half of which must
@@ -26,7 +53,7 @@ bulk import, direct SQL, and the planned Bun.js rewrite. Deactivation is never
 blocked — that is how an over-quota company recovers. Expiry is a single
 inclusive date comparison; there is no grace state.
 
-`sy_detail_payment` carries `CHECK (subtotal = jumlah * bulan * harga_per_bulan)`,
+`sy_payment_detail` carries `CHECK (subtotal = jumlah * bulan * harga_per_bulan)`,
 so a mis-computed line cannot be stored at all.
 
 ### Fixed
@@ -132,7 +159,7 @@ two rows and every transfer nets to zero.
 
 ### Notes
 
-- Document tables (§5.7 — `pos_rekap_*` / `pos_detail_*`) were **not** created.
+- Document tables (§5.7 — `pos_*_rekap` / `pos_*_detail`) were **not** created.
   The spec scopes them to the next module, which is why `pos_stok_mutasi`
   carries `rekap_tipe` / `rekap_id` with no foreign key.
 - `pos_stok_outlet` gained a `created_at` alongside the `updated_at` the spec

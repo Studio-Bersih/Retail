@@ -37,8 +37,8 @@ document is revised.
 
 Governed by `CLAUDE.md`. Summary: `lower_snake_case`; Indonesian domain nouns;
 surrogate `id` keys; foreign keys never point at natural string keys; money is
-`DECIMAL(15,2)`; parent/child document tables are `pos_rekap_[feature]` and
-`pos_detail_[feature]`. The word `delta` is not used — a signed change is
+`DECIMAL(15,2)`; parent/child document tables are `pos_[feature]_rekap` and
+`pos_[feature]_detail`. The word `delta` is not used — a signed change is
 `jumlah`, a resulting balance is `stok_akhir`.
 
 ## 4. Database
@@ -348,19 +348,19 @@ Specified here so the ledger's `rekap_tipe` / `rekap_id` have a defined target.
 **Implementation belongs to the next module, not this one.**
 
 ```sql
-pos_rekap_masuk     id, perusahaan_id, outlet_id, nomor, tanggal,
+pos_masuk_rekap     id, perusahaan_id, outlet_id, nomor, tanggal,
                     supplier_id?, karyawan_id, catatan?,
                     status ENUM('draft','posted','void'), timestamps
                     UNIQUE(perusahaan_id, nomor)
-pos_detail_masuk    id, rekap_id, produk_id, jumlah, harga_pokok?
+pos_masuk_detail    id, rekap_id, produk_id, jumlah, harga_pokok?
                     INDEX(rekap_id)
 
-pos_rekap_keluar    / pos_detail_keluar     same shape, no supplier
-pos_rekap_transfer  / pos_detail_transfer   + outlet_tujuan_id on the rekap
-pos_rekap_konversi  / pos_detail_konversi   detail carries konversi_id,
+pos_keluar_rekap    / pos_keluar_detail     same shape, no supplier
+pos_transfer_rekap  / pos_transfer_detail   + outlet_tujuan_id on the rekap
+pos_konversi_rekap  / pos_konversi_detail   detail carries konversi_id,
                                             produk_asal_id, jumlah_asal,
                                             produk_tujuan_id, jumlah_tujuan
-pos_rekap_retail    / pos_detail_retail     sales; header carries ongkir,
+pos_retail_rekap    / pos_retail_detail     sales; header carries ongkir,
                                             biaya_admin, service_charge
 ```
 

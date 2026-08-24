@@ -149,23 +149,23 @@ expectOk($pdo, 'the same company CAN once its subscription exists', function (PD
 
 echo PHP_EOL, "--- payment document integrity ---", PHP_EOL;
 
-expectRefused($pdo, 'a line whose subtotal does not match is refused', 'ck_detail_payment_subtotal', function (PDO $p) use ($pid) {
-    $rid = (int) $p->query("SELECT id FROM sy_rekap_payment WHERE perusahaan_id=$pid LIMIT 1")->fetch()['id'];
-    $p->exec("INSERT INTO sy_detail_payment
+expectRefused($pdo, 'a line whose subtotal does not match is refused', 'ck_payment_detail_subtotal', function (PDO $p) use ($pid) {
+    $rid = (int) $p->query("SELECT id FROM sy_payment_rekap WHERE perusahaan_id=$pid LIMIT 1")->fetch()['id'];
+    $p->exec("INSERT INTO sy_payment_detail
                 (perusahaan_id,rekap_id,jenis,keterangan,jumlah,bulan,harga_per_bulan,subtotal)
               VALUES ($pid,$rid,'outlet','Salah hitung',5,12,50000.00, 999.00)");
 });
 
 expectOk($pdo, 'a line whose subtotal is correct is accepted', function (PDO $p) use ($pid) {
-    $rid = (int) $p->query("SELECT id FROM sy_rekap_payment WHERE perusahaan_id=$pid LIMIT 1")->fetch()['id'];
-    $p->exec("INSERT INTO sy_detail_payment
+    $rid = (int) $p->query("SELECT id FROM sy_payment_rekap WHERE perusahaan_id=$pid LIMIT 1")->fetch()['id'];
+    $p->exec("INSERT INTO sy_payment_detail
                 (perusahaan_id,rekap_id,jenis,keterangan,jumlah,bulan,harga_per_bulan,subtotal)
               VALUES ($pid,$rid,'outlet','Benar',5,12,50000.00, 3000000.00)");
     return '-> 5 x 12 x 50.000 = 3.000.000';
 });
 
 expectRefused($pdo, 'a period that ends before it starts is refused', 'ck_payment_periode', function (PDO $p) use ($pid) {
-    $p->exec("INSERT INTO sy_rekap_payment
+    $p->exec("INSERT INTO sy_payment_rekap
                 (perusahaan_id,nomor,tanggal,periode_mulai,periode_sampai,total,status)
               VALUES ($pid,'CHK-REV',CURDATE(),'2027-01-01','2026-01-01',100,'draft')");
 });
@@ -181,25 +181,25 @@ expectRefused($pdo, 'a negative quota is refused', 'ck_subscription_kuota', func
 echo PHP_EOL, "--- the renewal transaction (spec §7) ---", PHP_EOL;
 
 expectOk($pdo, 'marking a payment lunas extends the term and sets the quota', function (PDO $p) use ($pid) {
-    $p->exec("INSERT INTO sy_rekap_payment
+    $p->exec("INSERT INTO sy_payment_rekap
                 (perusahaan_id,nomor,tanggal,periode_mulai,periode_sampai,total,status,metode,dicatat_oleh)
               VALUES ($pid,'CHK-RENEW',CURDATE(),
                       DATE_ADD(CURDATE(), INTERVAL 1 DAY),
                       DATE_ADD(CURDATE(), INTERVAL 366 DAY),
                       4200000.00,'draft','transfer BCA','Uji')");
     $rid = (int) $p->lastInsertId();
-    $p->exec("INSERT INTO sy_detail_payment
+    $p->exec("INSERT INTO sy_payment_detail
                 (perusahaan_id,rekap_id,jenis,keterangan,jumlah,bulan,harga_per_bulan,subtotal) VALUES
                 ($pid,$rid,'outlet','Outlet / cabang',5,12,50000.00,3000000.00),
                 ($pid,$rid,'karyawan','Staff',20,12,5000.00,1200000.00)");
     // the one transaction that both marks it paid and moves the entitlement
-    $p->exec("UPDATE sy_rekap_payment SET status='lunas' WHERE id=$rid");
+    $p->exec("UPDATE sy_payment_rekap SET status='lunas' WHERE id=$rid");
     $p->exec("UPDATE sy_subscription s
-                JOIN sy_rekap_payment r ON r.id=$rid
+                JOIN sy_payment_rekap r ON r.id=$rid
                  SET s.berlaku_sampai = r.periode_sampai,
-                     s.kuota_outlet   = (SELECT jumlah FROM sy_detail_payment
+                     s.kuota_outlet   = (SELECT jumlah FROM sy_payment_detail
                                           WHERE rekap_id=$rid AND jenis='outlet'),
-                     s.kuota_karyawan = (SELECT jumlah FROM sy_detail_payment
+                     s.kuota_karyawan = (SELECT jumlah FROM sy_payment_detail
                                           WHERE rekap_id=$rid AND jenis='karyawan')
                WHERE s.perusahaan_id=$pid");
     $r = $p->query("SELECT berlaku_sampai, kuota_outlet, kuota_karyawan
@@ -227,8 +227,8 @@ $after = $pdo->query("SELECT
     (SELECT COUNT(*) FROM sy_perusahaan)     AS perusahaan,
     (SELECT COUNT(*) FROM sy_outlet)         AS outlet,
     (SELECT COUNT(*) FROM sy_karyawan)       AS karyawan,
-    (SELECT COUNT(*) FROM sy_rekap_payment)  AS payment,
-    (SELECT COUNT(*) FROM sy_detail_payment) AS payment_line")->fetch();
+    (SELECT COUNT(*) FROM sy_payment_rekap)  AS payment,
+    (SELECT COUNT(*) FROM sy_payment_detail) AS payment_line")->fetch();
 foreach ($after as $k => $v) printf("  %-14s %s%s", $k, $v, PHP_EOL);
 
 printf('%s%d passed, %d failed%s', PHP_EOL, $pass, $fail, PHP_EOL);

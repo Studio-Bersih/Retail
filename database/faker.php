@@ -76,7 +76,7 @@ $pdo->exec('SET FOREIGN_KEY_CHECKS = 0');
 foreach ([
     'pos_stok_mutasi','pos_stok_outlet','pos_harga_produk','pos_level_harga',
     'pos_master_konversi','pos_master_produk','pos_supplier','pos_merek','pos_jenis',
-    'sy_detail_payment','sy_rekap_payment','sy_subscription',
+    'sy_payment_detail','sy_payment_rekap','sy_subscription',
     'sy_karyawan','sy_outlet','pos_satuan','pos_region','sy_perusahaan',
 ] as $t) {
     $pdo->exec("TRUNCATE TABLE `$t`");
@@ -193,7 +193,7 @@ function buildCompany(
     $barisKaryawan = $kuotaKaryawan * $bulan * $tarif['karyawan'];
 
     $pdo->prepare(
-        'INSERT INTO sy_rekap_payment
+        'INSERT INTO sy_payment_rekap
            (perusahaan_id, nomor, tanggal, periode_mulai, periode_sampai,
             total, status, metode, catatan, dicatat_oleh)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
@@ -211,7 +211,7 @@ function buildCompany(
     ]);
     $rekapId = (int) $pdo->lastInsertId();
 
-    batchInsert($pdo, 'sy_detail_payment',
+    batchInsert($pdo, 'sy_payment_detail',
         ['perusahaan_id','rekap_id','jenis','keterangan','jumlah','bulan','harga_per_bulan','subtotal'], [
         [$pid, $rekapId, 'outlet',   'Outlet / cabang', $kuotaOutlet,   $bulan, $tarif['outlet'],   $barisOutlet],
         [$pid, $rekapId, 'karyawan', 'Staff',           $kuotaKaryawan, $bulan, $tarif['karyawan'], $barisKaryawan],
@@ -646,7 +646,7 @@ foreach ([
     'sy_perusahaan','pos_region','pos_satuan','sy_outlet','sy_karyawan','pos_jenis','pos_merek',
     'pos_supplier','pos_master_produk','pos_master_konversi','pos_level_harga','pos_harga_produk',
     'pos_stok_outlet','pos_stok_mutasi',
-    'sy_pricing','sy_subscription','sy_rekap_payment','sy_detail_payment',
+    'sy_pricing','sy_subscription','sy_payment_rekap','sy_payment_detail',
 ] as $t) {
     $c = (int) $pdo->query("SELECT COUNT(*) c FROM `$t`")->fetch()['c'];
     printf("  %-22s %s%s", $t, number_format($c), PHP_EOL);

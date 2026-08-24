@@ -894,7 +894,7 @@ WHERE table_schema=<span class="k">'retail'</span> AND column_comment &lt;&gt; <
       <text x="40" y="107" font-family="IBM Plex Mono,monospace" font-size="10.5" fill="var(--ink-3)">karyawan  5.000 /bln</text>
 
       <rect x="330" y="30" width="300" height="86" rx="3" fill="var(--surface)" stroke="currentColor" stroke-width="1.3"/>
-      <text x="348" y="54" font-family="IBM Plex Mono,monospace" font-size="12" font-weight="600" fill="currentColor">sy_rekap_payment + _detail</text>
+      <text x="348" y="54" font-family="IBM Plex Mono,monospace" font-size="12" font-weight="600" fill="currentColor">sy_payment_rekap + _detail</text>
       <text x="348" y="74" font-family="Archivo,sans-serif" font-size="11" fill="var(--ink-2)">the truth. One row per renewal.</text>
       <text x="348" y="92" font-family="IBM Plex Mono,monospace" font-size="10.5" fill="var(--ink-3)">5 outlet x 12 x 50.000 = 3.000.000</text>
       <text x="348" y="107" font-family="IBM Plex Mono,monospace" font-size="10.5" fill="var(--ink-3)">20 staff x 12 x  5.000 = 1.200.000</text>
@@ -957,8 +957,8 @@ WHERE table_schema=<span class="k">'retail'</span> AND column_comment &lt;&gt; <
       <tbody>
         <tr><td class="m">sy_pricing</td><td>Flat price per unit per month. The landing page and the renewal calculation read the same row, so they cannot disagree.</td><td><span class="chip no">global</span></td></tr>
         <tr class="hub"><td class="m">sy_subscription</td><td>Current term and quota. One row per company. The four triggers read this.</td><td><span class="chip t">per company</span></td></tr>
-        <tr><td class="m">sy_rekap_payment</td><td>One row per renewal — the document header.</td><td><span class="chip t">per company</span></td></tr>
-        <tr><td class="m">sy_detail_payment</td><td>The lines. <code>harga_per_bulan</code> is snapshotted, so raising prices never rewrites history.</td><td><span class="chip t">per company</span></td></tr>
+        <tr><td class="m">sy_payment_rekap</td><td>One row per renewal — the document header.</td><td><span class="chip t">per company</span></td></tr>
+        <tr><td class="m">sy_payment_detail</td><td>The lines. <code>harga_per_bulan</code> is snapshotted, so raising prices never rewrites history.</td><td><span class="chip t">per company</span></td></tr>
       </tbody>
     </table>
   </div>
@@ -1006,7 +1006,7 @@ WHERE table_schema=<span class="k">'retail'</span> AND column_comment &lt;&gt; <
   <div class="cols">
     <div class="card">
       <h3>Document tables — next module</h3>
-      <p class="fine"><code>pos_rekap_masuk</code> / <code>pos_detail_masuk</code>, and the same pair for <code>keluar</code>, <code>transfer</code>, <code>konversi</code> and <code>retail</code>. Stock moves only when a document is <code>posted</code>; a <code>void</code> reverses by writing opposing movements, never by deleting ledger rows.</p>
+      <p class="fine"><code>pos_masuk_rekap</code> / <code>pos_masuk_detail</code>, and the same pair for <code>keluar</code>, <code>transfer</code>, <code>konversi</code> and <code>retail</code>. Stock moves only when a document is <code>posted</code>; a <code>void</code> reverses by writing opposing movements, never by deleting ledger rows.</p>
     </div>
     <div class="card">
       <h3>Still open</h3>
