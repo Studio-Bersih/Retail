@@ -32,6 +32,7 @@ document is revised.
 | 9 | **Region attaches to price and outlet, never to the product.** One `kode` serves every region. |
 | 10 | **Non-physical charges are not products.** Ongkir, biaya admin and service charge live on the transaction header. |
 | 11 | **The new POS gets its own database**, separate from Marmyadose's `dao`. |
+| 12 | **Quantities are `DECIMAL(15,3)`, and divisibility is a property of the unit.** `pos_satuan.is_pecahan` decides whether a product may be sold in fractions. |
 
 ## 3. Naming
 
@@ -88,6 +89,7 @@ pos_satuan                          -- global
   id            BIGINT UNSIGNED PK
   kode          VARCHAR(10)   UNIQUE     -- pcs, box, kg
   nama          VARCHAR(50)
+  is_pecahan    BOOLEAN DEFAULT 0        -- may a quantity here have decimals?
   created_at, updated_at
 
 sy_outlet
@@ -188,9 +190,9 @@ pos_master_konversi
   id                BIGINT UNSIGNED PK
   perusahaan_id     -> sy_perusahaan
   produk_asal_id    -> pos_master_produk     -- Mineral Water (Box)
-  jumlah_asal       INT                      -- 1
+  jumlah_asal       DECIMAL(15,3)            -- 1, or 1 Sak
   produk_tujuan_id  -> pos_master_produk     -- Mineral Water (Pcs)
-  jumlah_tujuan     INT                      -- 12
+  jumlah_tujuan     DECIMAL(15,3)            -- 12, or 25.5 Kg
   is_active         BOOLEAN DEFAULT 1
   created_at, updated_at
 
@@ -256,7 +258,7 @@ pos_stok_outlet                     -- cached balance
   perusahaan_id -> sy_perusahaan
   outlet_id     -> sy_outlet
   produk_id     -> pos_master_produk
-  stok          INT NOT NULL DEFAULT 0
+  stok          DECIMAL(15,3) NOT NULL DEFAULT 0
   updated_at
   UNIQUE(outlet_id, produk_id)
   INDEX(perusahaan_id, produk_id)
@@ -267,8 +269,8 @@ pos_stok_mutasi                     -- append-only ledger, the truth
   perusahaan_id    -> sy_perusahaan
   outlet_id        -> sy_outlet
   produk_id        -> pos_master_produk
-  jumlah           INT NOT NULL           -- signed change
-  stok_akhir       INT NOT NULL           -- balance after this row
+  jumlah           DECIMAL(15,3) NOT NULL -- signed change
+  stok_akhir       DECIMAL(15,3) NOT NULL -- balance after this row
   tipe             ENUM('masuk','keluar','transfer','konversi',
                         'retail','retur','penyesuaian')
   rekap_tipe?      VARCHAR(20)            -- 'masuk','konversi',...
@@ -341,6 +343,33 @@ oversell and who closed it — neither of which is answerable today.
 
 This removes `PRE_ADJUSTMENT`, `HISTORY_PRE_ADJUSTMENT` and
 `HISTORY_ADJUSTMENT` entirely. The mechanism they emulated is now just data.
+
+### 5.6a Fractional quantities
+
+A shop selling 1.5 kg of ice needs a quantity that is not an integer. Two
+changes make that work, and a third stops it leaking where it should not.
+
+**Quantities are `DECIMAL(15,3)`** — gram and millilitre precision.
+**Never `FLOAT` or `DOUBLE`.** The drift check (`stok = SUM(jumlah)`) is exact
+today; floating point would make it report phantom drift forever, and that
+check is the single best safety property in this schema.
+
+**Divisibility is a property of the unit, not the product.** `pos_satuan`
+carries `is_pecahan`; a kilogram divides and a botol does not, for every
+company and every product. Decision 4 already gives each product exactly one
+unit, so the unit fully determines the product's behaviour. Putting the flag on
+the product instead would allow half the `kg` products to permit decimals and
+half to refuse — nonsense that no constraint could catch. Divisible today:
+`kg` and `liter` only.
+
+**Enforced by trigger.** `trg_pecahan_mutasi` refuses a fractional `jumlah` or
+`stok_akhir` when the product's unit is whole-only. It costs about 83 µs per
+inserted row, measured at 20 000 rows: imperceptible on a sale, roughly
++8 seconds on a 100 000-row bulk import.
+
+If a company ever needs "we sell ice by the kg but only in whole kg", that is a
+*policy* narrowing and can be added as a nullable override on the product. It
+is purely additive, so it is not built now.
 
 ### 5.7 Document tables — contract only
 

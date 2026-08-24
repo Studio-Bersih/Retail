@@ -41,6 +41,27 @@ function pick(array $a) { return $a[array_rand($a)]; }
 function chance(int $pct): bool { return mt_rand(1, 100) <= $pct; }
 function roundTo(float $v, int $step): float { return (float) (round($v / $step) * $step); }
 
+/**
+ * Quantities are carried through the simulation as INTEGER milli-units (1 kg =
+ * 1000) and rendered to DECIMAL(15,3) only on write. Accumulating a running
+ * balance in floats would drift, and the drift check compares that balance
+ * against an exact DECIMAL SUM in MySQL - it would start failing for no real
+ * reason. Same trick as storing money in cents.
+ *
+ * Returns a quantity legal for this unit: whole for discrete units, to the
+ * nearest 50 g / 50 ml for the two that divide.
+ */
+function pecahanQty(string $unit, int $lo, int $hi): int
+{
+    if ($unit === 'kg' || $unit === 'liter') {
+        return (int) (round(mt_rand($lo * 1000, $hi * 1000) / 50) * 50);
+    }
+    return mt_rand($lo, $hi) * 1000;
+}
+
+/** milli-units -> the string MySQL stores in DECIMAL(15,3). */
+function qty(int $milli): string { return number_format($milli / 1000, 3, '.', ''); }
+
 function batchInsert(PDO $pdo, string $table, array $cols, array $rows, int $chunk = 500): void
 {
     if (!$rows) return;
@@ -96,12 +117,14 @@ batchInsert($pdo, 'pos_region', ['kode','nama'], $REGIONS);
 $regionId = [];
 foreach ($pdo->query('SELECT id, kode FROM pos_region') as $r) $regionId[$r['kode']] = (int) $r['id'];
 
+// is_pecahan: only kg and liter divide. A sak or a dus is a discrete package -
+// "0.5 sak" is ambiguous, and a shop selling loose rice wants a kg product.
 $SATUAN = [
-    ['pcs','Pieces'], ['box','Box'], ['dus','Dus'], ['pak','Pak'],
-    ['renceng','Renceng'], ['botol','Botol'], ['kg','Kilogram'], ['liter','Liter'],
-    ['sak','Sak'], ['lusin','Lusin'],
+    ['pcs','Pieces',0], ['box','Box',0], ['dus','Dus',0], ['pak','Pak',0],
+    ['renceng','Renceng',0], ['botol','Botol',0], ['kg','Kilogram',1], ['liter','Liter',1],
+    ['sak','Sak',0], ['lusin','Lusin',0],
 ];
-batchInsert($pdo, 'pos_satuan', ['kode','nama'], $SATUAN);
+batchInsert($pdo, 'pos_satuan', ['kode','nama','is_pecahan'], $SATUAN);
 $satuanId = [];
 foreach ($pdo->query('SELECT id, kode FROM pos_satuan') as $r) $satuanId[$r['kode']] = (int) $r['id'];
 
@@ -144,6 +167,14 @@ $CATALOG = [
         ['Kecap Manis',      ['135ml','520ml'],                ['botol'],       9500,  520],
         ['Saus Sambal',      ['135ml','335ml'],                ['botol'],       8500,  335],
         ['Penyedap Rasa',    ['8g','100g'],                    ['renceng','pak'], 500,  100],
+    ],
+    // sold by weight or volume - these exercise the fractional path
+    'Curah' => [
+        ['Es Balok',         ['curah'],  ['kg'],    2500,  1000],
+        ['Beras Curah',      ['curah'],  ['kg'],   13000,  1000],
+        ['Gula Pasir Curah', ['curah'],  ['kg'],   15500,  1000],
+        ['Minyak Curah',     ['curah'],  ['liter'],16000,  1000],
+        ['Minyak Tanah',     ['curah'],  ['liter'],12000,  1000],
     ],
     'Makanan Instan' => [
         ['Mi Instan Goreng', ['85g'],                          ['pcs','dus'],   3200,   85],
@@ -411,9 +442,17 @@ function simulateStock(PDO $pdo, array $co, array $cfg, array &$rekap): array
     $konversi = [];
     $st = $pdo->prepare('SELECT produk_asal_id, jumlah_asal, produk_tujuan_id, jumlah_tujuan FROM pos_master_konversi WHERE perusahaan_id = ?');
     $st->execute([$pid]);
-    foreach ($st as $r) $konversi[] = array_map('intval', $r);
+    foreach ($st as $r) $konversi[] = [
+    'produk_asal_id'   => (int) $r['produk_asal_id'],
+    'jumlah_asal'      => (int) round((float) $r['jumlah_asal']   * 1000),
+    'produk_tujuan_id' => (int) $r['produk_tujuan_id'],
+    'jumlah_tujuan'    => (int) round((float) $r['jumlah_tujuan'] * 1000),
+];
 
-    $bal  = [];  // [outlet_id][produk_id] => int
+    $unitOf = [];
+    foreach ($produk as $pp) $unitOf[$pp['id']] = $pp['unit'];
+
+    $bal  = [];  // [outlet_id][produk_id] => milli-units (int)
     $rows = [];  // pos_stok_mutasi tuples
     // $rekap is shared across companies: the document tables it will point at have a
     // single auto-increment key, so two companies never reuse the same rekap_id.
@@ -424,13 +463,14 @@ function simulateStock(PDO $pdo, array $co, array $cfg, array &$rekap): array
         return pick($co['karyawan']['privileged']);
     };
 
+    // $jumlah is in milli-units. $bal is in milli-units. Only the written row is decimal.
     $move = function (int $outletId, int $produkId, int $jumlah, string $tipe, int $karyawanId,
                       ?string $rekapTipe, ?int $rekapId, ?int $supplierId, ?float $hargaPokok,
                       ?int $lawanId, ?string $alasan, ?string $catatan, string $ts)
              use (&$bal, &$rows, $pid) {
         $now = ($bal[$outletId][$produkId] ?? 0) + $jumlah;
         $bal[$outletId][$produkId] = $now;
-        $rows[] = [$pid, $outletId, $produkId, $jumlah, $now, $tipe, $rekapTipe, $rekapId,
+        $rows[] = [$pid, $outletId, $produkId, qty($jumlah), qty($now), $tipe, $rekapTipe, $rekapId,
                    $supplierId, $hargaPokok, $lawanId, $alasan, $catatan, $karyawanId, $ts];
     };
 
@@ -444,8 +484,7 @@ function simulateStock(PDO $pdo, array $co, array $cfg, array &$rekap): array
         $keys = (array) array_rand($produk, min($take, count($produk)));
         foreach ($keys as $k) {
             $p   = $produk[$k];
-            $qty = $p['unit'] === 'sak' || $p['unit'] === 'dus' || $p['unit'] === 'box'
-                 ? mt_rand(4, 40) : mt_rand(12, 240);
+            $qty = pecahanQty($p['unit'], 20, 400);
             $rekap['masuk']++;
             $move($o['id'], $p['id'], $qty, 'masuk', $staffAt($o['id']), 'masuk', $rekap['masuk'],
                   pick($suppliers), roundTo($p['cost'], 50), null, null, 'stok awal',
@@ -487,7 +526,7 @@ function simulateStock(PDO $pdo, array $co, array $cfg, array &$rekap): array
             $stocked = array_keys($bal[$o['id']] ?? []);
             if (!$stocked) continue;
             $prodId = pick($stocked);
-            $qty    = mt_rand(1, 6);
+            $qty    = pecahanQty($unitOf[$prodId] ?? 'pcs', 1, 6);
             $after  = $bal[$o['id']][$prodId] - $qty;
             $alasan = $catatan = null;
             if ($after < 0) {
@@ -510,7 +549,7 @@ function simulateStock(PDO $pdo, array $co, array $cfg, array &$rekap): array
             $o = pick($outlets);
             $p = $produk[array_rand($produk)];
             $rekap['masuk']++;
-            $move($o['id'], $p['id'], mt_rand(6, 120), 'masuk', $staffAt($o['id']), 'masuk', $rekap['masuk'],
+            $move($o['id'], $p['id'], pecahanQty($p['unit'], 6, 120), 'masuk', $staffAt($o['id']), 'masuk', $rekap['masuk'],
                   pick($suppliers), roundTo($p['cost'] * mt_rand(94, 108) / 100, 50), null, null, null, $ts);
 
         } elseif ($intent === 'transfer') {
@@ -520,7 +559,7 @@ function simulateStock(PDO $pdo, array $co, array $cfg, array &$rekap): array
             $stocked = array_keys(array_filter($bal[$from['id']] ?? [], fn($v) => $v > 12));
             if (!$stocked) continue;
             $prodId = pick($stocked);
-            $qty    = min(mt_rand(4, 30), $bal[$from['id']][$prodId]);
+            $qty    = min(mt_rand(4, 30) * 1000, $bal[$from['id']][$prodId]);
             $rekap['transfer']++; $rk = $rekap['transfer'];
             $ts = $tick();
             $move($from['id'], $prodId, -$qty, 'transfer', $staffAt($from['id']), 'transfer', $rk, null, null, $to['id'],   null, null, $ts);
@@ -548,17 +587,17 @@ function simulateStock(PDO $pdo, array $co, array $cfg, array &$rekap): array
             $roll = mt_rand(1, 100);
             if ($roll <= 40) {
                 $rekap['retur']++;
-                $move($o['id'], $prodId, mt_rand(1, 4), 'retur', $staffAt($o['id']), 'retur', $rekap['retur'],
+                $move($o['id'], $prodId, pecahanQty($unitOf[$prodId] ?? 'pcs', 1, 4), 'retur', $staffAt($o['id']), 'retur', $rekap['retur'],
                       null, null, null, null, 'retur pelanggan', $ts);
             } elseif ($roll <= 75) {
-                $qty = min(mt_rand(1, 5), max(0, $bal[$o['id']][$prodId]));
+                $qty = min(pecahanQty($unitOf[$prodId] ?? 'pcs', 1, 5), max(0, $bal[$o['id']][$prodId]));
                 if ($qty <= 0) continue;
                 $rekap['keluar']++;
                 $move($o['id'], $prodId, -$qty, 'keluar', $staffAt($o['id']), 'keluar', $rekap['keluar'],
                       null, null, null, null, pick(['rusak','kadaluarsa','sampel']), $ts);
             } else {
                 // penyesuaian: absolute count, only auditor/admin may write it
-                $target = max(0, $bal[$o['id']][$prodId] + mt_rand(-4, 4));
+                $target = max(0, $bal[$o['id']][$prodId] + mt_rand(-4, 4) * 1000);
                 $jumlah = $target - $bal[$o['id']][$prodId];
                 if ($jumlah === 0) continue;
                 $move($o['id'], $prodId, $jumlah, 'penyesuaian', pick($co['karyawan']['privileged']),
@@ -577,7 +616,7 @@ function simulateStock(PDO $pdo, array $co, array $cfg, array &$rekap): array
     // cached balances — taken straight from the simulation, so they cannot drift
     $balRows = [];
     foreach ($bal as $outletId => $byProduk) {
-        foreach ($byProduk as $produkId => $stok) $balRows[] = [$pid, $outletId, $produkId, $stok];
+        foreach ($byProduk as $produkId => $stok) $balRows[] = [$pid, $outletId, $produkId, qty($stok)];
     }
     batchInsert($pdo, 'pos_stok_outlet', ['perusahaan_id','outlet_id','produk_id','stok'], $balRows);
 
@@ -599,7 +638,7 @@ $companies = [
         'cities'=>array_merge($CITIES_A, $CITIES_A, $CITIES_A),
         'outlets'=>$FULL ? 56 : 18, 'gudang'=>$FULL ? 5 : 2, 'regions'=>true,
         'staff_per_outlet'=>3, 'auditors'=>3, 'admins'=>2,
-        'jenis'=>8, 'merek'=>18, 'supplier'=>24, 'brands_per_line'=>$FULL ? 8 : 3,
+        'jenis'=>9, 'merek'=>18, 'supplier'=>24, 'brands_per_line'=>$FULL ? 8 : 3,
         'produk'=>$FULL ? 900 : 260,
         'levels'=>['Retail','GoFood','Transfer Pabrik'],
         'margin'=>['Retail'=>1.62,'GoFood'=>2.18,'Transfer Pabrik'=>1.15],

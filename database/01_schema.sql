@@ -69,12 +69,14 @@ CREATE TABLE `pos_satuan` (
   `id`         BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
   `kode`       VARCHAR(10)     NOT NULL,
   `nama`       VARCHAR(50)     NOT NULL,
+  `is_pecahan` BOOLEAN         NOT NULL DEFAULT 0
+                 COMMENT 'may a quantity in this unit have decimals? kg and liter yes; pcs, box, sak no',
   `created_at` TIMESTAMP       NULL DEFAULT CURRENT_TIMESTAMP,
   `updated_at` TIMESTAMP       NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
   UNIQUE KEY `uq_satuan_kode` (`kode`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
-  COMMENT='Global unit of measure.';
+  COMMENT='Global unit of measure. is_pecahan decides whether a quantity may be fractional - divisibility is a property of the UNIT, not of a product.';
 
 
 CREATE TABLE `sy_outlet` (
@@ -232,9 +234,9 @@ CREATE TABLE `pos_master_konversi` (
   `id`               BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
   `perusahaan_id`    BIGINT UNSIGNED NOT NULL,
   `produk_asal_id`   BIGINT UNSIGNED NOT NULL,
-  `jumlah_asal`      INT             NOT NULL COMMENT 'how many of produk_asal are consumed, e.g. 1 Box',
+  `jumlah_asal`      DECIMAL(15,3)   NOT NULL COMMENT 'how many of produk_asal are consumed, e.g. 1 Box or 1 Sak',
   `produk_tujuan_id` BIGINT UNSIGNED NOT NULL,
-  `jumlah_tujuan`    INT             NOT NULL COMMENT 'how many of produk_tujuan are produced, e.g. 12 Pcs',
+  `jumlah_tujuan`    DECIMAL(15,3)   NOT NULL COMMENT 'how many of produk_tujuan are produced, e.g. 12 Pcs or 25.5 Kg',
   `is_active`        BOOLEAN         NOT NULL DEFAULT 1,
   `created_at`       TIMESTAMP       NULL DEFAULT CURRENT_TIMESTAMP,
   `updated_at`       TIMESTAMP       NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP,
@@ -314,7 +316,7 @@ CREATE TABLE `pos_stok_outlet` (
   `perusahaan_id` BIGINT UNSIGNED NOT NULL,
   `outlet_id`     BIGINT UNSIGNED NOT NULL,
   `produk_id`     BIGINT UNSIGNED NOT NULL,
-  `stok`          INT             NOT NULL DEFAULT 0 COMMENT 'cached balance; equals SUM(jumlah) of this pair in pos_stok_mutasi. May be negative',
+  `stok`          DECIMAL(15,3)   NOT NULL DEFAULT 0 COMMENT 'cached balance; equals SUM(jumlah) of this pair in pos_stok_mutasi. May be negative. DECIMAL, never FLOAT - the drift check depends on exact sums',
   `created_at`    TIMESTAMP       NULL DEFAULT CURRENT_TIMESTAMP,
   `updated_at`    TIMESTAMP       NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
@@ -337,8 +339,8 @@ CREATE TABLE `pos_stok_mutasi` (
   `perusahaan_id`    BIGINT UNSIGNED NOT NULL,
   `outlet_id`        BIGINT UNSIGNED NOT NULL,
   `produk_id`        BIGINT UNSIGNED NOT NULL,
-  `jumlah`           INT             NOT NULL COMMENT 'signed change; never called delta',
-  `stok_akhir`       INT             NOT NULL COMMENT 'balance after this row',
+  `jumlah`           DECIMAL(15,3)   NOT NULL COMMENT 'signed change; never called delta. Fractional only where pos_satuan.is_pecahan = 1',
+  `stok_akhir`       DECIMAL(15,3)   NOT NULL COMMENT 'balance after this row',
   `tipe`             ENUM('masuk','keluar','transfer','konversi','retail','retur','penyesuaian') NOT NULL,
   `rekap_tipe`       VARCHAR(20)     NULL DEFAULT NULL COMMENT 'which document family caused this: masuk, keluar, transfer, konversi, retail',
   `rekap_id`         BIGINT UNSIGNED NULL DEFAULT NULL COMMENT 'header row id in that document. Soft link - no FK, the document tables do not exist yet',
@@ -371,3 +373,42 @@ CREATE TABLE `pos_stok_mutasi` (
     REFERENCES `sy_karyawan` (`id`) ON UPDATE RESTRICT ON DELETE RESTRICT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
   COMMENT='Append-only ledger, the truth. Direction is the sign of jumlah, not the tipe.';
+
+
+-- ============================================================
+-- Fractional quantities.
+--
+-- jumlah is DECIMAL(15,3) so 1.5 kg of ice is storable at all. Whether a given
+-- product MAY use those decimals is a property of its unit: pos_satuan.is_pecahan.
+--
+-- DECIMAL and never FLOAT: the drift check (stok = SUM(jumlah)) is exact today,
+-- and floating point would make it report phantom drift forever.
+--
+-- Application code validates first and produces a usable message; this refuses
+-- anything that gets past it. It fires on every stock movement, so it does two
+-- primary-key lookups and nothing more.
+-- ============================================================
+
+DELIMITER //
+
+CREATE TRIGGER `trg_pecahan_mutasi` BEFORE INSERT ON `pos_stok_mutasi`
+FOR EACH ROW
+BEGIN
+  DECLARE boleh_pecahan TINYINT;
+  SELECT s.is_pecahan INTO boleh_pecahan
+    FROM `pos_master_produk` p
+    JOIN `pos_satuan` s ON s.id = p.satuan_id
+   WHERE p.id = NEW.produk_id;
+  IF boleh_pecahan = 0 THEN
+    IF NEW.jumlah <> TRUNCATE(NEW.jumlah, 0) THEN
+      SIGNAL SQLSTATE '45000'
+        SET MESSAGE_TEXT = 'Satuan ini tidak boleh pecahan - jumlah harus bilangan bulat';
+    END IF;
+    IF NEW.stok_akhir <> TRUNCATE(NEW.stok_akhir, 0) THEN
+      SIGNAL SQLSTATE '45000'
+        SET MESSAGE_TEXT = 'Satuan ini tidak boleh pecahan - stok_akhir harus bilangan bulat';
+    END IF;
+  END IF;
+END//
+
+DELIMITER ;

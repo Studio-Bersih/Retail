@@ -38,6 +38,9 @@ mysql -h 127.0.0.1 -P 3306 -u root -proot --table < database/03_integrity_check.
 
 # subscription: quota gates, reactivation, bootstrapping, renewal, login gate
 php database/06_subscription_check.php
+
+# fractional quantities: which units divide, and that DECIMAL sums stay exact
+php database/07_pecahan_check.php
 ```
 
 ## Files
@@ -50,6 +53,7 @@ php database/06_subscription_check.php
 | `04_views.sql` | Eight reading views for the POS domain. |
 | `05_subscription.sql` | Subscription tables, quota triggers, `subscription` and `payment` views, seeded `sy_pricing`. |
 | `06_subscription_check.php` | 16 subscription assertions, half of which must fail. Rolls back. |
+| `07_pecahan_check.php` | 9 fractional-quantity assertions. Rolls back. |
 | `faker.php` | Sample data: 2 companies, 120 days of trade, ~63k rows. Seeded — reruns are identical. |
 
 ## Rebuilding from scratch

@@ -20,6 +20,10 @@
 --   harga         one row per PRICE   (produk x level x region) - filter this
 --   produk_harga  one row per PRODUCT (its whole price list as one string)
 
+-- Quantities are DECIMAL(15,3), so twelve bottles stores as 12.000. These views
+-- trim trailing zeros for display: 12.000 -> 12, 1.500 -> 1.5. The untrimmed
+-- numeric column is kept alongside so the view is still sortable and filterable.
+
 USE `retail`;
 
 DROP VIEW IF EXISTS `produk`;
@@ -43,6 +47,7 @@ SELECT
   p.kode,
   p.nama,
   sat.nama                               AS satuan,
+  IF(sat.is_pecahan, 'boleh pecahan', 'bilangan bulat') AS satuan_pecahan,
   COALESCE(j.nama,  '(tanpa jenis)')     AS jenis,
   COALESCE(mr.nama, '(tanpa merek)')     AS merek,
   COALESCE(sup.nama,'(tanpa supplier)')  AS supplier_default,
@@ -137,8 +142,11 @@ SELECT
   -- kode and merek are in the sentence on purpose: two brands of the same
   -- bottle have identical `nama`, and without them the recipes read as
   -- duplicates of each other.
-  CONCAT(k.jumlah_asal, ' ', sa.nama, ' ', pa.kode, ' ', pa.nama,
-         '  ->  ', k.jumlah_tujuan, ' ', st.nama, ' ', pt.kode, ' ', pt.nama,
+  CONCAT(TRIM(TRAILING '.' FROM TRIM(TRAILING '0' FROM k.jumlah_asal)),
+         ' ', sa.nama, ' ', pa.kode, ' ', pa.nama,
+         '  ->  ',
+         TRIM(TRAILING '.' FROM TRIM(TRAILING '0' FROM k.jumlah_tujuan)),
+         ' ', st.nama, ' ', pt.kode, ' ', pt.nama,
          '   [', COALESCE(mr.nama, 'tanpa merek'), ']') AS resep,
   COALESCE(mr.nama, '(tanpa merek)') AS merek,
   pa.kode                    AS dari_kode,
@@ -175,6 +183,8 @@ SELECT
   p.nama                     AS produk,
   sat.nama                   AS satuan,
   so.stok,
+  CONCAT(TRIM(TRAILING '.' FROM TRIM(TRAILING '0' FROM so.stok)), ' ', sat.kode) AS stok_tampil,
+  IF(sat.is_pecahan, 'boleh pecahan', 'bilangan bulat') AS satuan_pecahan,
   CASE WHEN so.stok < 0 THEN 'MINUS - menunggu barang masuk'
        WHEN so.stok = 0 THEN 'kosong'
        WHEN so.stok < 10 THEN 'menipis'
@@ -205,8 +215,11 @@ SELECT
   mu.tipe,
   IF(mu.jumlah > 0, 'masuk', 'keluar') AS arah,
   mu.jumlah,
-  CONCAT(IF(mu.jumlah > 0, '+', ''), mu.jumlah) AS jumlah_tampil,
+  CONCAT(IF(mu.jumlah > 0, '+', ''),
+         TRIM(TRAILING '.' FROM TRIM(TRAILING '0' FROM mu.jumlah)),
+         ' ', sat.kode) AS jumlah_tampil,
   mu.stok_akhir              AS sisa_setelah_ini,
+  TRIM(TRAILING '.' FROM TRIM(TRAILING '0' FROM mu.stok_akhir)) AS sisa_tampil,
   CONCAT(k.nama, ' (', k.peran, ')') AS oleh,
   COALESCE(sup.nama, '-')    AS supplier,
   mu.harga_pokok             AS harga_pokok,

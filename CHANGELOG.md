@@ -1,5 +1,45 @@
 # Changelog
 
+## 2026-08-24 — Fractional quantities
+
+1.5 kg of ice is now storable. It was not before: every quantity column was
+`INT`, so MySQL silently rounded it to 2.
+
+### Changed
+
+- `pos_stok_mutasi.jumlah`, `pos_stok_mutasi.stok_akhir`,
+  `pos_stok_outlet.stok`, `pos_master_konversi.jumlah_asal` and
+  `jumlah_tujuan` — `INT` → `DECIMAL(15,3)`. Gram and millilitre precision.
+  **Not `FLOAT`**: the drift check `stok = SUM(jumlah)` is exact today, and
+  floating point would make it report phantom drift forever.
+- `pos_satuan` gains `is_pecahan`. Divisibility is a property of the **unit**,
+  not of a product — a kilogram divides, a botol does not, for everyone. With
+  one unit per product (decision 4) the unit fully determines the behaviour,
+  and 10 rows are maintained instead of 2 285. Divisible: `kg`, `liter`.
+- `trg_pecahan_mutasi` refuses a fractional `jumlah` or `stok_akhir` when the
+  unit is whole-only. Measured at **83 µs per inserted row** over 20 000 rows —
+  nothing on a sale, about +8 s on a 100 000-row import.
+- The `produk`, `stok`, `mutasi` and `konversi` views trim trailing zeros, so
+  twelve bottles reads `12 botol` rather than `12.000`.
+
+### Fixed
+
+- **`faker.php` would have drifted.** It accumulated running balances in PHP
+  floats. With fractional quantities those sums stop matching MySQL's exact
+  `DECIMAL` arithmetic, and the drift check would have started failing for no
+  real reason. It now carries quantities as integer milli-units internally and
+  renders to decimal only on write — the same trick as storing money in cents.
+
+### Added
+
+- `database/07_pecahan_check.php` — 9 assertions including that ten additions
+  of `0.1` sum to exactly `1.000`, which is the property the whole design rests
+  on. All pass.
+- Bulk products sold by weight and volume (ice, loose rice, loose sugar, bulk
+  oil, kerosene), so the fractional path is actually exercised: 2 729 of 47 466
+  movements are fractional.
+
+
 ## 2026-08-24 — Rename: the feature leads, rekap/detail follows
 
 `pos_rekap_[feature]` / `pos_detail_[feature]` becomes

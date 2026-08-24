@@ -82,6 +82,11 @@ whether the thing genuinely has lines — a subscription payment does ("5 outlet
 - Foreign keys are `<thing>_id` and reference `id` — never a natural string
   key. Natural codes (`kode`, `nama`) stay as `UNIQUE` columns only.
 - Money is `DECIMAL(15,2)`. Never `INT`.
+- Quantities are `DECIMAL(15,3)`. **Never `FLOAT` or `DOUBLE`** — the stock
+  drift check (`stok = SUM(jumlah)`) depends on sums being exact.
+  Whether a quantity *may* be fractional is `pos_satuan.is_pecahan`:
+  divisibility belongs to the unit, never to a product.
+  `sy_payment_detail.jumlah` is the exception — a seat count, always `INT`.
 - Timestamps are `created_at` / `updated_at`.
 
 ### 3a. The SaaS layer
