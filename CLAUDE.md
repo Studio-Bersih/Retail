@@ -44,6 +44,15 @@ document, not the table's role.
 
 A table with no child does not take the `rekap`/`detail` prefix.
 
+**Scope.** This rule governs *transaction documents* — things with a header and
+line items. Master data (`pos_master_*`) and lookups (`pos_*`) are covered by
+§2 instead and never take it, however many tables reference them.
+
+**Outside `pos_`.** The convention also applies to organisational documents,
+with the `sy_` prefix: `sy_rekap_payment` / `sy_detail_payment`. The test is
+whether the thing genuinely has lines — a subscription payment does ("5 outlets
+× 12 months × Rp 50.000"), an audit log does not.
+
 ### 2. Other prefixes
 
 | Prefix        | Meaning                          | Examples                              |
@@ -58,6 +67,9 @@ A table with no child does not take the `rekap`/`detail` prefix.
 - Indonesian for domain nouns (`kode`, `nama`, `harga`, `satuan`, `jenis`,
   `merek`, `stok`, `jumlah`). English for structural/technical terms
   (`id`, `created_at`, `is_active`, `sequence`).
+- `sequence` is display order. It is never a precedence rank and nothing
+  resolves a value by it. In `pos_level_harga` the price level is the row
+  itself (`nama`), not its `sequence`.
 - **Never use the word `delta`.** A signed quantity change is `jumlah`.
   A resulting balance is `stok_akhir`.
 - Surrogate primary key `id BIGINT UNSIGNED AUTO_INCREMENT` on every table.
@@ -65,6 +77,16 @@ A table with no child does not take the `rekap`/`detail` prefix.
   key. Natural codes (`kode`, `nama`) stay as `UNIQUE` columns only.
 - Money is `DECIMAL(15,2)`. Never `INT`.
 - Timestamps are `created_at` / `updated_at`.
+
+### 3a. The SaaS layer
+
+The vendor-facing subscription layer takes **English table names** —
+`sy_subscription`, `sy_pricing`, `sy_rekap_payment`, `sy_detail_payment` —
+because these are vendor concepts, not shop-floor ones. The POS domain stays
+Indonesian.
+
+**Columns are unaffected.** §3 applies unchanged everywhere: `berlaku_sampai`,
+`kuota_outlet`, `harga_per_bulan`, `tanggal`, `jumlah`.
 
 ### 4. Multi-tenancy
 
@@ -88,6 +110,27 @@ A table with no child does not take the `rekap`/`detail` prefix.
   `STATUS` enum contained `' Diskontinu'`, which silently broke comparisons.
 - **One enum, one axis.** Do not mix availability and lifecycle in a single
   column the way legacy `STATUS` did.
+
+## Views
+
+Views take the **bare subject name** with no prefix — `produk`, `harga`, `stok`,
+`mutasi`, `subscription` — while tables keep `pos_` / `sy_`. HeidiSQL and
+`information_schema` already separate the two, so a prefix would only add noise.
+
+Views resolve every `*_id` to the name it points at. They are for reading by
+eye, not an application layer: application queries hit the tables directly and
+select only the columns they need.
+
+## Subscription
+
+Every company has exactly one `sy_subscription` row, and **creating a company
+must create it in the same transaction**. Quota triggers on `sy_outlet` and
+`sy_karyawan` refuse inserts when no subscription row exists, so a company
+without one cannot be given its first outlet.
+
+A seat is a **currently active row**; deactivating frees it immediately.
+Deactivation is never blocked — it is how an over-quota company recovers.
+The system never deactivates or deletes a customer's rows.
 
 ## Design process
 

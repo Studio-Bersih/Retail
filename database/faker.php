@@ -67,11 +67,16 @@ if ($existing > 0 && !$FORCE) {
     exit(1);
 }
 
-say('Wiping `retail` …');
+say('Wiping `retail` … (sy_pricing is left alone - it is seeded by 05_subscription.sql)');
+if (!$pdo->query("SHOW TABLES LIKE 'sy_subscription'")->fetch()) {
+    say('sy_subscription is missing. Run database/05_subscription.sql first.');
+    exit(1);
+}
 $pdo->exec('SET FOREIGN_KEY_CHECKS = 0');
 foreach ([
     'pos_stok_mutasi','pos_stok_outlet','pos_harga_produk','pos_level_harga',
     'pos_master_konversi','pos_master_produk','pos_supplier','pos_merek','pos_jenis',
+    'sy_detail_payment','sy_rekap_payment','sy_subscription',
     'sy_karyawan','sy_outlet','pos_satuan','pos_region','sy_perusahaan',
 ] as $t) {
     $pdo->exec("TRUNCATE TABLE `$t`");
@@ -161,6 +166,56 @@ function buildCompany(
     $pdo->prepare('INSERT INTO sy_perusahaan (kode, nama) VALUES (?, ?)')
         ->execute([$cfg['kode'], $cfg['nama']]);
     $pid = (int) $pdo->lastInsertId();
+
+    // ---- subscription FIRST (spec §6.5)
+    // The quota triggers refuse an outlet or staff insert when no subscription
+    // row exists, so this cannot be done later. Quota is sized to what this
+    // company is about to create, plus headroom - which is what a customer of
+    // this size would actually have bought.
+    $kuotaOutlet   = $cfg['outlets'] + $cfg['seat_headroom'];
+    $kuotaKaryawan = $cfg['outlets'] * $cfg['staff_per_outlet']
+                   + $cfg['auditors'] + $cfg['admins'] + $cfg['seat_headroom'];
+
+    $pdo->prepare(
+        'INSERT INTO sy_subscription
+           (perusahaan_id, berlaku_sampai, kuota_outlet, kuota_karyawan, catatan, diubah_oleh)
+         VALUES (?, ?, ?, ?, ?, ?)'
+    )->execute([$pid, $cfg['berlaku_sampai'], $kuotaOutlet, $kuotaKaryawan,
+                $cfg['catatan_langganan'], 'Sistem (faker)']);
+
+    // ---- the payment that bought that term
+    $tarif = [];
+    foreach ($pdo->query('SELECT jenis, harga_per_bulan FROM sy_pricing') as $r) {
+        $tarif[$r['jenis']] = (float) $r['harga_per_bulan'];
+    }
+    $bulan   = 12;
+    $barisOutlet   = $kuotaOutlet   * $bulan * $tarif['outlet'];
+    $barisKaryawan = $kuotaKaryawan * $bulan * $tarif['karyawan'];
+
+    $pdo->prepare(
+        'INSERT INTO sy_rekap_payment
+           (perusahaan_id, nomor, tanggal, periode_mulai, periode_sampai,
+            total, status, metode, catatan, dicatat_oleh)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+    )->execute([
+        $pid,
+        'INV-' . date('Y') . '-' . $cfg['kode'],
+        $cfg['periode_mulai'],
+        $cfg['periode_mulai'],
+        $cfg['berlaku_sampai'],
+        $barisOutlet + $barisKaryawan,
+        'lunas',
+        'transfer BCA',
+        'Perpanjangan tahunan',
+        'Sistem (faker)',
+    ]);
+    $rekapId = (int) $pdo->lastInsertId();
+
+    batchInsert($pdo, 'sy_detail_payment',
+        ['perusahaan_id','rekap_id','jenis','keterangan','jumlah','bulan','harga_per_bulan','subtotal'], [
+        [$pid, $rekapId, 'outlet',   'Outlet / cabang', $kuotaOutlet,   $bulan, $tarif['outlet'],   $barisOutlet],
+        [$pid, $rekapId, 'karyawan', 'Staff',           $kuotaKaryawan, $bulan, $tarif['karyawan'], $barisKaryawan],
+    ]);
 
     // ---- outlets
     $cities = ['Bandung','Bekasi','Depok','Tangerang','Bogor','Cirebon','Semarang','Solo',
@@ -537,6 +592,10 @@ $CITIES_A = ['Bandung','Bekasi','Depok','Tangerang','Bogor','Cirebon','Semarang'
 $companies = [
     [
         'kode'=>'ACME', 'nama'=>'PT Acme Retail Nusantara',
+        'seat_headroom'=>10,
+        'periode_mulai'=>date('Y-m-d', strtotime('-2 months')),
+        'berlaku_sampai'=>date('Y-m-d', strtotime('+10 months')),
+        'catatan_langganan'=>null,
         'cities'=>array_merge($CITIES_A, $CITIES_A, $CITIES_A),
         'outlets'=>$FULL ? 56 : 18, 'gudang'=>$FULL ? 5 : 2, 'regions'=>true,
         'staff_per_outlet'=>3, 'auditors'=>3, 'admins'=>2,
@@ -553,6 +612,11 @@ $companies = [
     [
         // the flat-price company: one level, no regions — proves that path stays simple
         'kode'=>'KOPI', 'nama'=>'CV Kopi Sederhana',
+        // deliberately close to expiry, so the `subscription` view shows a warning
+        'seat_headroom'=>2,
+        'periode_mulai'=>date('Y-m-d', strtotime('-11 months 20 days')),
+        'berlaku_sampai'=>date('Y-m-d', strtotime('+10 days')),
+        'catatan_langganan'=>'Transfer belum masuk - diperpanjang 3 hari manual',
         'cities'=>['Solo','Yogyakarta','Salatiga','Klaten'],
         'outlets'=>4, 'gudang'=>1, 'regions'=>false,
         'staff_per_outlet'=>2, 'auditors'=>1, 'admins'=>1,
@@ -582,6 +646,7 @@ foreach ([
     'sy_perusahaan','pos_region','pos_satuan','sy_outlet','sy_karyawan','pos_jenis','pos_merek',
     'pos_supplier','pos_master_produk','pos_master_konversi','pos_level_harga','pos_harga_produk',
     'pos_stok_outlet','pos_stok_mutasi',
+    'sy_pricing','sy_subscription','sy_rekap_payment','sy_detail_payment',
 ] as $t) {
     $c = (int) $pdo->query("SELECT COUNT(*) c FROM `$t`")->fetch()['c'];
     printf("  %-22s %s%s", $t, number_format($c), PHP_EOL);

@@ -1,5 +1,52 @@
 # Changelog
 
+## 2026-08-24 — Subscription and entitlement
+
+Implements `docs/superpowers/specs/2026-08-24-subscription-design.md`.
+
+### Added
+
+- `database/05_subscription.sql` — four tables (`sy_pricing`, `sy_subscription`,
+  `sy_rekap_payment`, `sy_detail_payment`), four quota triggers, two reading
+  views (`subscription`, `payment`), and the seeded flat price list:
+  Rp 50.000/month per outlet, Rp 5.000/month per staff.
+- `database/06_subscription_check.php` — 16 assertions, half of which must
+  fail. Every one runs inside a transaction and rolls back.
+- `database/README.md` — the run order, which the file numbers do not imply.
+- `faker.php` now creates each company's subscription and the payment that
+  bought it, before any outlet or staff row. This is not cosmetic: the quota
+  triggers refuse those inserts otherwise, so the faker run is a real
+  end-to-end test of the bootstrapping rule.
+
+### Enforcement
+
+Quota is checked by the application first and by a `BEFORE INSERT` /
+`BEFORE UPDATE` trigger behind it, so the rule survives a forgotten check, a
+bulk import, direct SQL, and the planned Bun.js rewrite. Deactivation is never
+blocked — that is how an over-quota company recovers. Expiry is a single
+inclusive date comparison; there is no grace state.
+
+`sy_detail_payment` carries `CHECK (subtotal = jumlah * bulan * harga_per_bulan)`,
+so a mis-computed line cannot be stored at all.
+
+### Fixed
+
+- **`03_integrity_check.sql` collided with the sample data.** It created a
+  company coded `ACME` and the lookups `JW` / `pcs`, all of which `faker.php`
+  now owns — so it failed outright on a populated database. It now uses a
+  distinct company code, `INSERT IGNORE`s the shared global lookups, and
+  creates the subscription row its outlet and staff inserts require.
+- **Two of its outputs had become misleading.** The konversi assertion matched
+  faker rows sharing `rekap_id` 777, and the closing line claimed "database is
+  empty again" while printing 46,869 faker movements. Both now scope to the
+  test company and assert that other data is untouched.
+
+### Changed
+
+- `CLAUDE.md`: §1 scoped to transaction documents and extended to `sy_`
+  documents; §3 clarifies `sequence`; new §3a for English SaaS-layer table
+  names; new sections for view naming and the subscription invariants.
+
 ## 2026-08-24 — Reading views and self-documenting columns
 
 ### Added

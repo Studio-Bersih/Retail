@@ -1,14 +1,26 @@
+-- POS core assertions. Runs inside a transaction and rolls back, leaving no
+-- rows behind. Safe to run against a database that already holds faker data.
+--
+-- Depends on 05_subscription.sql: creating an outlet or a staff member
+-- requires the company to have a subscription row.
 USE retail;
 START TRANSACTION;
 
-INSERT INTO sy_perusahaan (kode, nama) VALUES ('ACME','PT Acme Retail');
+-- A distinct code: faker.php already owns ACME and KOPI, and this script is
+-- meant to run alongside that data.
+INSERT INTO sy_perusahaan (kode, nama) VALUES ('CHK','PT Uji Integritas');
 SET @p := LAST_INSERT_ID();
 
-INSERT INTO pos_region (kode, nama) VALUES ('JW','Jawa'),('KLM','Kalimantan');
+-- Required before any outlet or staff row: the quota triggers in
+-- 05_subscription.sql refuse inserts for a company with no subscription.
+INSERT INTO sy_subscription (perusahaan_id, berlaku_sampai, kuota_outlet, kuota_karyawan)
+VALUES (@p, DATE_ADD(CURDATE(), INTERVAL 1 YEAR), 10, 10);
+
+INSERT IGNORE INTO pos_region (kode, nama) VALUES ('JW','Jawa'),('KLM','Kalimantan');
 SET @r_jw := (SELECT id FROM pos_region WHERE kode='JW');
 SET @r_klm := (SELECT id FROM pos_region WHERE kode='KLM');
 
-INSERT INTO pos_satuan (kode, nama) VALUES ('pcs','Pieces'),('box','Box');
+INSERT IGNORE INTO pos_satuan (kode, nama) VALUES ('pcs','Pieces'),('box','Box');
 SET @s_pcs := (SELECT id FROM pos_satuan WHERE kode='pcs');
 SET @s_box := (SELECT id FROM pos_satuan WHERE kode='box');
 
@@ -126,11 +138,12 @@ INSERT INTO pos_stok_mutasi (perusahaan_id,outlet_id,produk_id,jumlah,stok_akhir
  (@p,@o_jw,@pr_pcs,12,(SELECT stok FROM pos_stok_outlet WHERE outlet_id=@o_jw AND produk_id=@pr_pcs),'konversi','konversi',777,@k_a);
 SELECT pp.kode AS produk, mu.jumlah, mu.stok_akhir, mu.rekap_tipe, mu.rekap_id
 FROM pos_stok_mutasi mu JOIN pos_master_produk pp ON pp.id=mu.produk_id
-WHERE mu.rekap_id=777 ORDER BY mu.id;
+WHERE mu.perusahaan_id=@p AND mu.rekap_id=777 ORDER BY mu.id;
 
 ROLLBACK;
 
-SELECT '--- after ROLLBACK: database is empty again ---' AS test;
-SELECT (SELECT COUNT(*) FROM sy_perusahaan) AS perusahaan,
-       (SELECT COUNT(*) FROM pos_master_produk) AS produk,
-       (SELECT COUNT(*) FROM pos_stok_mutasi) AS mutasi;
+SELECT '--- after ROLLBACK: the test company is gone, other data untouched ---' AS test;
+SELECT (SELECT COUNT(*) FROM sy_perusahaan WHERE kode='CHK') AS perusahaan_uji_harus_0,
+       (SELECT COUNT(*) FROM sy_perusahaan)                  AS perusahaan_lain,
+       (SELECT COUNT(*) FROM pos_master_produk)              AS produk_lain,
+       (SELECT COUNT(*) FROM pos_stok_mutasi)                AS mutasi_lain;
