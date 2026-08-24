@@ -1,0 +1,18 @@
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+indent_style = space
+indent_size = 4
+
+# Markdown uses trailing whitespace for hard line breaks
+[*.md]
+trim_trailing_whitespace = false
+
+# Generated — leave whatever the tool writes
+[{bun.lock,package-lock.json,pnpm-lock.yaml,yarn.lock}]
+indent_style = unset
+indent_size = unset

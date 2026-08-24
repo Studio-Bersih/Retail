@@ -1,10 +1,29 @@
+/* Plus Jakarta Sans, self-hosted.
+   @fontsource-variable ships the woff2 files inside node_modules, so Vite
+   bundles and fingerprints them at build time. Nothing is fetched from Google
+   at runtime — the app renders its own typeface with no network. */
+@import '@fontsource-variable/plus-jakarta-sans';
+
 @import 'tailwindcss';
 @plugin '@tailwindcss/typography';
 
 /* daisyUI 5 — component classes on top of Tailwind.
-   Themes are opt-in: name each one you want available, and the browser picks
-   between light and dark from the `prefersdark` / `default` flags below.
-   Switch manually with <html data-theme="dark">. */
+   Themes are opt-in: light is the default, dark follows prefers-color-scheme,
+   and <html data-theme="..."> overrides both. */
 @plugin 'daisyui' {
-  themes: light --default, dark --prefersdark;
+    themes: light --default, dark --prefersdark;
+}
+
+/* Make Jakarta Sans the primary font everywhere. Tailwind 4 is CSS-first, so
+   theme values are custom properties rather than a config file. */
+@theme {
+    --font-sans:
+        'Plus Jakarta Sans Variable', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto,
+        'Helvetica Neue', Arial, sans-serif;
+}
+
+html {
+    font-family: var(--font-sans);
+    /* Jakarta Sans has a large x-height; this keeps digits aligned in tables. */
+    font-variant-numeric: tabular-nums;
 }
