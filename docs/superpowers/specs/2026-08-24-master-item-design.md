@@ -148,6 +148,13 @@ pos_master_produk
 delivered is recorded per receipt, because stock can arrive from the company or
 direct from a supplier.
 
+`UNIQUE(perusahaan_id, barcode)` relies on MySQL treating `NULL`s as distinct,
+so any number of products may have no barcode while a present barcode stays
+unique within the company. That is the desired behaviour **here**, and the
+opposite of what is needed in `pos_harga_produk` (§4.5) — where a `NULL` region
+carries meaning and must therefore be collapsed to a sentinel before being
+indexed. The asymmetry is deliberate.
+
 ### 4.4 Konversi recipe
 
 ```sql
