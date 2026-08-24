@@ -1,7 +1,9 @@
 # Subscription & Entitlement — Design
 
 **Date:** 2026-08-24
-**Status:** Awaiting review
+**Status:** Implemented
+**Implemented:** 2026-08-24 — `database/05_subscription.sql`, verified by
+`database/06_subscription_check.php` (16/16).
 **Scope:** Yearly subscription, seat quotas for outlets and staff, and the
 enforcement that makes them real.
 **Not in scope:** Payment gateways, automatic renewal, invoicing as a product,

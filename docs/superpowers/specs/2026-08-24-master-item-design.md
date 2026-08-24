@@ -1,7 +1,9 @@
 # Master Item — Design
 
 **Date:** 2026-08-24
-**Status:** Awaiting review
+**Status:** Implemented
+**Implemented:** 2026-08-24 — `database/01_schema.sql`. Amended by decision 12
+(fractional quantities, §5.6a).
 **Scope:** Master Item and the stock foundation it requires.
 **Not in scope:** Sales, reporting, purchasing, the POS screens themselves.
 
