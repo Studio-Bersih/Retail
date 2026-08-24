@@ -2,6 +2,7 @@
     import { portal } from 'svelte-portal';
     import type { Snippet } from 'svelte';
     import Icon from './Icon.svelte';
+    import { lockScroll } from '$lib/utils/scrollLock';
 
     export type ModalSize = 'sm' | 'md' | 'lg' | 'xl' | 'full';
 
@@ -47,13 +48,11 @@
         if (event.key === 'Escape') close();
     }
 
+    // Reference-counted, so a Modal opened from inside a Drawer does not leave
+    // <body> stuck at overflow:hidden when it closes.
     $effect(() => {
         if (!toggle) return;
-        const previous = document.body.style.overflow;
-        document.body.style.overflow = 'hidden';
-        return () => {
-            document.body.style.overflow = previous;
-        };
+        return lockScroll();
     });
 </script>
 
