@@ -52,9 +52,8 @@ so a mis-computed line cannot be stored at all.
 ### Added
 
 - `database/04_views.sql` — eight read-only views that resolve every `*_id` to
-  the name it points at: `v_produk`, `v_produk_harga`, `v_harga_produk`,
-  `v_konversi`, `v_stok_outlet`, `v_stok_mutasi`, `v_pending_terima`,
-  `v_ringkasan_produk`. Run after `01_schema.sql`.
+  the name it points at: `produk`, `produk_harga`, `harga`, `konversi`, `stok`,
+  `mutasi`, `pending_terima`, `ringkasan_produk`.
 - Twenty `COLUMN COMMENT`s across the schema, readable from
   `information_schema.columns` and inherited by the views.
 
@@ -64,13 +63,17 @@ so a mis-computed line cannot be stored at all.
   `nama` holds `Retail` / `GoFood` / `Transfer Pabrik`, and that is what a price
   is keyed by. `sequence` is display order only; nothing resolves prices with
   it. Not renamed: `CLAUDE.md` §3 names `sequence` explicitly as an approved
-  English structural term. It is now commented, and surfaces in
-  `v_harga_produk` as `urutan_tampil`.
+  English structural term. It is now commented, and surfaces in the `harga`
+  view as `urutan_tampil`.
 
 ### Notes
 
-- View naming (`v_` prefix) is not covered by `CLAUDE.md` and needs blessing
-  before it spreads.
+- Views take the bare subject name, no prefix — HeidiSQL and
+  `information_schema` already separate views from tables. Now written into
+  `CLAUDE.md`.
+- `harga` (one row per price) and `produk_harga` (one row per product, whole
+  price list as text) are easy to confuse; both are documented in the file
+  header.
 - The database was rebuilt from `01_schema.sql` and the sample data
   regenerated; the faker is seeded, so the data is identical to before.
 
