@@ -3,6 +3,19 @@
 Multi-company, multi-outlet Point of Sale.
 Frontend: SvelteKit. Backend: Marmyadose (Laravel), migrating to Bun.js later.
 
+## Database
+
+This POS owns **its own MySQL database** (working name `retail`), separate from
+Marmyadose's `dao`. `dao` contains an unrelated `pos_master_produk` serving
+Nick Cell / Layescent; the two must not be mixed.
+
+- Laravel reaches it through a dedicated `retail` connection —
+  `DB::connection('retail')`. Never the default connection.
+- Migrations run with `--database=retail` and never touch `dao` in the same
+  file.
+- **No cross-database joins.** They couple the two systems and would block the
+  planned move to Bun.js, which takes this database over whole.
+
 ## Database naming — STRICT
 
 These rules are binding on every future design and brainstorming session.

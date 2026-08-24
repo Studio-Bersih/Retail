@@ -31,6 +31,7 @@ document is revised.
 | 8 | **Price is keyed by product + level + region**, region nullable. Levels are named per company. |
 | 9 | **Region attaches to price and outlet, never to the product.** One `kode` serves every region. |
 | 10 | **Non-physical charges are not products.** Ongkir, biaya admin and service charge live on the transaction header. |
+| 11 | **The new POS gets its own database**, separate from Marmyadose's `dao`. |
 
 ## 3. Naming
 
@@ -40,9 +41,34 @@ surrogate `id` keys; foreign keys never point at natural string keys; money is
 `pos_detail_[feature]`. The word `delta` is not used — a signed change is
 `jumlah`, a resulting balance is `stok_akhir`.
 
-## 4. Schema
+## 4. Database
 
-### 4.1 Organisation
+The new POS lives in **its own MySQL database**, separate from Marmyadose's
+`dao`. Working name: `retail`.
+
+This settles the name collision: `dao` already contains a `pos_master_produk`
+serving Nick Cell / Layescent, with entirely different columns and three
+branches as hardcoded fields. Sharing a database would have forced a prefix on
+every table in this design and fought the naming convention. Separate databases
+cost nothing here — both run on the same MySQL server.
+
+**Consequences to honour:**
+
+- Laravel gets a second connection (`retail`) in `config/database.php`.
+  Controllers for this module use `DB::connection('retail')`; existing
+  Marmyadose controllers are untouched.
+- Migrations for this module run against `--database=retail` and must never be
+  mixed into the same migration files as `dao` changes.
+- **No cross-database joins.** MySQL permits them on one server, but they
+  couple the two systems and would break the later move to Bun.js. Anything
+  this module needs, it owns.
+- The planned Bun.js backend takes over this database whole, with no `dao`
+  entanglement to unpick.
+- Authentication is the one genuine seam — see open question 4.
+
+## 5. Schema
+
+### 5.1 Organisation
 
 ```sql
 sy_perusahaan
@@ -94,7 +120,7 @@ sy_karyawan
 "Item Masuk from the company" originates. An FLC — Factory Logistic Center — is
 a `gudang`.
 
-### 4.2 Per-company lookups
+### 5.2 Per-company lookups
 
 ```sql
 pos_jenis                           -- product category
@@ -115,7 +141,7 @@ pos_supplier
 `pos_supplier` replaces both legacy supplier tables. Banking details are
 deferred to a purchasing module.
 
-### 4.3 Product master
+### 5.3 Product master
 
 ```sql
 pos_master_produk
@@ -151,11 +177,11 @@ direct from a supplier.
 `UNIQUE(perusahaan_id, barcode)` relies on MySQL treating `NULL`s as distinct,
 so any number of products may have no barcode while a present barcode stays
 unique within the company. That is the desired behaviour **here**, and the
-opposite of what is needed in `pos_harga_produk` (§4.5) — where a `NULL` region
+opposite of what is needed in `pos_harga_produk` (§5.5) — where a `NULL` region
 carries meaning and must therefore be collapsed to a sentinel before being
 indexed. The asymmetry is deliberate.
 
-### 4.4 Konversi recipe
+### 5.4 Konversi recipe
 
 ```sql
 pos_master_konversi
@@ -178,7 +204,7 @@ since MySQL cannot express a cross-row tenant check as a constraint.
 
 Recipes are directional. Re-packing 12 Pcs back into 1 Box is a second row.
 
-### 4.5 Pricing
+### 5.5 Pricing
 
 ```sql
 pos_level_harga
@@ -222,7 +248,7 @@ levels or regions. Worked example for product `11001`:
 11001  Retail           KLM   11000    Kalimantan overrides retail
 ```
 
-### 4.6 Stock
+### 5.6 Stock
 
 ```sql
 pos_stok_outlet                     -- cached balance
@@ -316,7 +342,7 @@ oversell and who closed it — neither of which is answerable today.
 This removes `PRE_ADJUSTMENT`, `HISTORY_PRE_ADJUSTMENT` and
 `HISTORY_ADJUSTMENT` entirely. The mechanism they emulated is now just data.
 
-### 4.7 Document tables — contract only
+### 5.7 Document tables — contract only
 
 Specified here so the ledger's `rekap_tipe` / `rekap_id` have a defined target.
 **Implementation belongs to the next module, not this one.**
@@ -341,7 +367,7 @@ pos_rekap_retail    / pos_detail_retail     sales; header carries ongkir,
 Stock moves only when a document is `posted`. A `void` reverses by writing
 opposing movements — never by deleting ledger rows.
 
-## 5. Dropped from the legacy schema
+## 6. Dropped from the legacy schema
 
 | Legacy | Fate | Why |
 | ------ | ---- | --- |
@@ -352,7 +378,7 @@ opposing movements — never by deleting ledger rows.
 | `BENEFIT_PRODUK` | dropped | marketing copy |
 | `TIPE` | dropped | no foreign key, no referenced table, no discoverable meaning |
 | `CREATED_BY VARCHAR(5)` | → FK to `sy_karyawan` | 5 chars here, 6 for `NIP` in stock — same concept, two widths |
-| `STOK_PESANAN` | dropped | see open question 3 |
+| `STOK_PESANAN` | dropped | see open question 2 |
 | `PRE_ADJUSTMENT`, both `HISTORY_*` | dropped | superseded by the ledger |
 | `FULLTEXT (KODE, KODE_OUTLET)` | dropped | serves no lookup the application performs |
 
@@ -370,7 +396,7 @@ Defects in the legacy tables that this design does not reproduce:
 - **Lookups joined by string value with `ON UPDATE CASCADE`**, so renaming a
   brand rewrote every product row.
 
-## 6. Deferred
+## 7. Deferred
 
 Additive; none of them require reworking what is specified above.
 
@@ -384,7 +410,7 @@ Additive; none of them require reworking what is specified above.
 - Per-company `alasan_minus` reason lists
 - `RANGE` partitioning of `pos_stok_mutasi` on `created_at`
 
-## 7. Scale
+## 8. Scale
 
 At current volume — 56 outlets, ~2,285 products — `pos_stok_mutasi` grows on
 the order of 10M rows per year, roughly 1–2 GB with indexes, per company. That
@@ -394,29 +420,21 @@ unique key and complicates the primary key, so it is not worth doing in v1.
 
 `pos_stok_outlet` stays small: one row per outlet × product actually stocked.
 
-## 8. Open questions
+## 9. Open questions
 
-1. **Table name collision.** Marmyadose already has a `pos_master_produk` — a
-   different table with different columns, serving Nick Cell / Layescent out of
-   the `dao` database, with three branches as hardcoded columns
-   (`STOK_ITEM`, `STOK_ITEM_SECOND`, `STOK_ITEM_THIRD`). This design reuses
-   several of those names. **Recommendation: give the new POS its own
-   database.** The alternative is prefixing every table, which fights the
-   naming convention. *Blocking before any migration is written.*
-
-2. **Region scope.** `pos_region` is global here, per the decision that
+1. **Region scope.** `pos_region` is global here, per the decision that
    universal lookups are shared. But the live `pos_region` holds 22
    single-character codes, which reads like internal zoning rather than
    geography. If companies need private regions, add a nullable
    `perusahaan_id` (null = global) — one column, no data migration.
 
-3. **Stock reservation.** Legacy `STOK_PESANAN` held stock reserved against
+2. **Stock reservation.** Legacy `STOK_PESANAN` held stock reserved against
    orders. Omitted rather than guessed at. Needed in v1?
 
-4. **Column language.** Indonesian domain nouns with English structural terms,
+3. **Column language.** Indonesian domain nouns with English structural terms,
    all lower snake case — a deliberate break from the legacy `UPPERCASE`.
    Confirm before the first migration.
 
-5. **`sy_karyawan` and authentication.** This design assumes employees live in
+4. **`sy_karyawan` and authentication.** This design assumes employees live in
    the new schema. Marmyadose has its own `users` table and a separate
    `pos_users`. How these relate is unresolved and affects login.
