@@ -178,9 +178,11 @@
     background-color: var(--scrim);
 }
 
-/* A wash of sand for section headers, empty states, table stripes. */
-@utility bg-sand-wash {
-    background-image: linear-gradient(180deg, var(--color-sand-50) 0%, var(--color-sand-100) 100%);
+/* A wash for header strips, empty states and table stripes. Built from the
+   theme's own base colours rather than the sand ramp, so it inverts correctly
+   under `retail-dark` instead of staying cream. */
+@utility bg-wash {
+    background-image: linear-gradient(180deg, var(--color-base-100) 0%, var(--color-base-200) 100%);
 }
 
 /* ---------------------------------------------------------------------------

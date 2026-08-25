@@ -61,7 +61,7 @@
 {#if toggle}
     <div use:portal={'body'}>
         <div
-            class="fixed inset-0 z-40 bg-black/40 backdrop-blur-[1px]"
+            class="bg-scrim fixed inset-0 z-40 backdrop-blur-[2px]"
             role="button"
             tabindex="-1"
             aria-label="Tutup"
@@ -71,14 +71,15 @@
 
         <div class="pointer-events-none fixed inset-0 z-50 grid place-items-center p-4">
             <div
-                class="bg-base-100 pointer-events-auto relative flex max-h-[90vh] w-full flex-col rounded-lg
-                shadow-xl {WIDTHS[size]} modal-pop"
+                class="bg-base-100 border-base-300 shadow-warm-lg pointer-events-auto relative flex
+                max-h-[90vh] w-full flex-col rounded-[var(--radius-box)] border
+                {WIDTHS[size]} modal-pop"
                 role="dialog"
                 aria-modal="true"
                 aria-label={title || 'Dialog'}
             >
                 {#if !hideTitle}
-                    <header class="border-base-300 flex items-center justify-between border-b px-5 py-4">
+                    <header class="border-base-300 bg-wash flex items-center justify-between border-b px-5 py-4">
                         <h2 class="text-lg font-semibold">{title}</h2>
                         {#if !hideClose}
                             <button class="btn btn-sm btn-ghost btn-circle" onclick={close} aria-label="Tutup">

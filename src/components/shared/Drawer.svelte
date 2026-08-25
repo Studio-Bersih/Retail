@@ -51,7 +51,7 @@
     <div use:portal={'body'}>
         <!-- backdrop -->
         <div
-            class="fixed inset-0 z-40 bg-black/40 backdrop-blur-[1px]"
+            class="bg-scrim fixed inset-0 z-40 backdrop-blur-[2px]"
             role="button"
             tabindex="-1"
             aria-label="Tutup"
@@ -60,14 +60,16 @@
         ></div>
 
         <div
-            class="bg-base-100 fixed inset-y-0 z-50 flex w-full max-w-md flex-col shadow-xl
-            {position === 'left' ? 'left-0 slide-left' : 'right-0 slide-right'}"
+            class="bg-base-100 shadow-warm-lg fixed inset-y-0 z-50 flex w-full max-w-md flex-col
+            {position === 'left'
+                ? 'slide-left border-base-300 left-0 border-r'
+                : 'slide-right border-base-300 right-0 border-l'}"
             role="dialog"
             aria-modal="true"
             aria-label={title || 'Drawer'}
         >
             {#if title || !hideClose}
-                <header class="border-base-300 flex items-center justify-between border-b px-5 py-4">
+                <header class="border-base-300 bg-wash flex items-center justify-between border-b px-5 py-4">
                     <h2 class="text-lg font-semibold">{title}</h2>
                     {#if !hideClose}
                         <button class="btn btn-sm btn-ghost btn-circle" onclick={close} aria-label="Tutup">
