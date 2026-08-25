@@ -7,23 +7,238 @@
 @import 'tailwindcss';
 @plugin '@tailwindcss/typography';
 
-/* daisyUI 5 — component classes on top of Tailwind.
-   Themes are opt-in: light is the default, dark follows prefers-color-scheme,
-   and <html data-theme="..."> overrides both. */
-@plugin 'daisyui' {
-    themes: light --default, dark --prefersdark;
-}
+/* ---------------------------------------------------------------------------
+   Palette
 
-/* Make Jakarta Sans the primary font everywhere. Tailwind 4 is CSS-first, so
-   theme values are custom properties rather than a config file. */
+   Four colours were sampled from the source swatch: #F9F8F6, #EFE9E3, #D9CFC7
+   and #C9B59C. They are all light warm neutrals — surfaces, in other words.
+   The swatch carries no dark tone and no action colour, so the ink and the
+   deeper sands below are *derived*: same hue family (~30°), extended down the
+   lightness ramp until text and buttons clear their contrast targets.
+
+   Everything else in this file refers to these two ramps. Change a hex here
+   and the whole app follows.
+--------------------------------------------------------------------------- */
 @theme {
     --font-sans:
         'Plus Jakarta Sans Variable', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto,
         'Helvetica Neue', Arial, sans-serif;
+
+    /* Sand — 50…300 are the sampled swatch, 400…700 are derived. */
+    --color-sand-50: #f9f8f6;
+    --color-sand-100: #efe9e3;
+    --color-sand-200: #d9cfc7;
+    --color-sand-300: #c9b59c;
+    --color-sand-400: #a78d6e;
+    --color-sand-500: #8c7458;
+    --color-sand-600: #7a6248;
+    --color-sand-700: #5c4a36;
+
+    /* Ink — warm greys, not neutral ones, so text sits *in* the palette. */
+    --color-ink-300: #a79c93;
+    --color-ink-500: #7a7068;
+    --color-ink-700: #4a423a;
+    --color-ink-900: #2b2621;
+
+    /* Espresso — the dark theme's surfaces, same hue, bottom of the ramp. */
+    --color-espresso-100: #3a322a;
+    --color-espresso-200: #262019;
+    --color-espresso-300: #1d1815;
+
+    /* Semantics, desaturated to sit quietly against cream rather than shout. */
+    --color-sage: #4f7a5b;
+    --color-terracotta: #a8443c;
+    --color-ochre: #b5842f;
+    --color-slate: #4a6b80;
 }
 
-html {
-    font-family: var(--font-sans);
-    /* Jakarta Sans has a large x-height; this keeps digits aligned in tables. */
-    font-variant-numeric: tabular-nums;
+/* ---------------------------------------------------------------------------
+   Themes
+
+   Two, both derived from the ramps above. `retail-dark` is not a separate
+   palette — it is the same one read from the other end: the sand that fills
+   buttons in daylight becomes the sand that lights them in the dark.
+--------------------------------------------------------------------------- */
+@plugin 'daisyui' {
+    themes: retail --default, retail-dark --prefersdark;
+}
+
+@plugin 'daisyui/theme' {
+    name: 'retail';
+    default: true;
+    color-scheme: light;
+
+    --color-base-100: #f9f8f6; /* panels, cards, popovers */
+    --color-base-200: #efe9e3; /* page canvas */
+    --color-base-300: #d9cfc7; /* strokes, dividers, hover */
+    --color-base-content: #2b2621;
+
+    --color-primary: #7a6248;
+    --color-primary-content: #f9f8f6;
+    --color-secondary: #c9b59c;
+    --color-secondary-content: #2b2621;
+    --color-accent: #96795a;
+    --color-accent-content: #f9f8f6;
+    --color-neutral: #2b2621;
+    --color-neutral-content: #f9f8f6;
+
+    --color-info: #4a6b80;
+    --color-info-content: #f9f8f6;
+    --color-success: #4f7a5b;
+    --color-success-content: #f9f8f6;
+    --color-warning: #b5842f;
+    --color-warning-content: #f9f8f6;
+    --color-error: #a8443c;
+    --color-error-content: #f9f8f6;
+
+    --radius-selector: 0.5rem;
+    --radius-field: 0.625rem;
+    --radius-box: 0.875rem;
+    --border: 1px;
+    --depth: 0;
+    --noise: 0;
+}
+
+@plugin 'daisyui/theme' {
+    name: 'retail-dark';
+    prefersdark: true;
+    color-scheme: dark;
+
+    /* base-100 sits above base-200 here, same as daisyUI's own dark themes:
+       the canvas recedes, panels catch the light. */
+    --color-base-100: #262019;
+    --color-base-200: #1d1815;
+    --color-base-300: #3a322a;
+    --color-base-content: #ede7e0;
+
+    /* The action colour inverts. Mocha disappears against espresso, so sand
+       takes over and carries dark text instead. */
+    --color-primary: #c9b59c;
+    --color-primary-content: #241f19;
+    --color-secondary: #8c7458;
+    --color-secondary-content: #f5f0ea;
+    --color-accent: #d9cfc7;
+    --color-accent-content: #241f19;
+    --color-neutral: #3a322a;
+    --color-neutral-content: #ede7e0;
+
+    /* Semantics lift too — the daylight versions are too dense to read here. */
+    --color-info: #7fa3b8;
+    --color-info-content: #241f19;
+    --color-success: #7bae88;
+    --color-success-content: #241f19;
+    --color-warning: #d9ac5e;
+    --color-warning-content: #241f19;
+    --color-error: #d9776c;
+    --color-error-content: #241f19;
+
+    --radius-selector: 0.5rem;
+    --radius-field: 0.625rem;
+    --radius-box: 0.875rem;
+    --border: 1px;
+    --depth: 0;
+    --noise: 0;
+}
+
+/* ---------------------------------------------------------------------------
+   Per-theme values daisyUI has no slot for.
+
+   `--shadow-tint` is a bare `r g b` triplet so the utilities below can vary the
+   alpha. Shadows are tinted with the palette's own brown: neutral black over
+   cream reads as dirt, the warm tint reads as shade.
+--------------------------------------------------------------------------- */
+[data-theme='retail'] {
+    --shadow-tint: 43 38 33;
+    --scrim: rgb(43 38 33 / 0.38);
+    --ring: var(--color-sand-400);
+}
+
+[data-theme='retail-dark'] {
+    --shadow-tint: 8 6 5;
+    --scrim: rgb(8 6 5 / 0.62);
+    --ring: var(--color-sand-300);
+}
+
+/* Elevation. Two long, low-opacity layers instead of one hard drop, so panels
+   look lifted rather than pasted on. */
+@utility shadow-warm {
+    box-shadow:
+        0 1px 2px rgb(var(--shadow-tint) / 0.05),
+        0 4px 12px -4px rgb(var(--shadow-tint) / 0.1);
+}
+
+@utility shadow-warm-lg {
+    box-shadow:
+        0 2px 4px rgb(var(--shadow-tint) / 0.06),
+        0 18px 44px -12px rgb(var(--shadow-tint) / 0.22);
+}
+
+/* Backdrop behind drawers and modals. */
+@utility bg-scrim {
+    background-color: var(--scrim);
+}
+
+/* A wash of sand for section headers, empty states, table stripes. */
+@utility bg-sand-wash {
+    background-image: linear-gradient(180deg, var(--color-sand-50) 0%, var(--color-sand-100) 100%);
+}
+
+/* ---------------------------------------------------------------------------
+   Base layer
+--------------------------------------------------------------------------- */
+@layer base {
+    html {
+        font-family: var(--font-sans);
+        /* Jakarta Sans has a large x-height; this keeps digits aligned in tables. */
+        font-variant-numeric: tabular-nums;
+        -webkit-font-smoothing: antialiased;
+        text-rendering: optimizeLegibility;
+    }
+
+    /* One ring for the whole app, in sand, offset so it reads on any surface.
+       :where() keeps specificity at zero — components can still override. */
+    :where(a, button, input, select, textarea, summary, [tabindex]):focus-visible {
+        outline: 2px solid var(--ring);
+        outline-offset: 2px;
+        border-radius: var(--radius-field, 0.625rem);
+    }
+
+    ::selection {
+        background-color: var(--color-sand-300);
+        color: var(--color-ink-900);
+    }
+
+    /* Scrollbars in the palette rather than the OS default grey. */
+    * {
+        scrollbar-color: var(--color-base-300) transparent;
+        scrollbar-width: thin;
+    }
+}
+
+/* Buttons should feel pressable. Tailwind's Preflight drops the pointer cursor,
+   and nothing acknowledged a click — restore both, app-wide. */
+@layer components {
+    :where(button, a, [role='button'], select, summary):not(:disabled) {
+        cursor: pointer;
+    }
+
+    :where(button, [role='button']):not(:disabled) {
+        transition:
+            transform 120ms ease,
+            box-shadow 120ms ease,
+            background-color 120ms ease;
+    }
+
+    :where(button, [role='button']):not(:disabled):active {
+        transform: scale(0.975);
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+        :where(button, [role='button']):not(:disabled) {
+            transition: none;
+        }
+        :where(button, [role='button']):not(:disabled):active {
+            transform: none;
+        }
+    }
 }
