@@ -1,4 +1,4 @@
-import { QTY_DECIMALS } from '../config';
+import { useConfig } from '../config';
 
 const RUPIAH = new Intl.NumberFormat('id-ID', {
     style: 'currency',
@@ -19,7 +19,7 @@ export function rupiah(value: number | string): string {
 export function qty(value: number | string, unit?: string): string {
     const n = Number(value);
     const text = new Intl.NumberFormat('id-ID', {
-        maximumFractionDigits: QTY_DECIMALS
+        maximumFractionDigits: useConfig.QTY_DECIMALS
     }).format(n);
     return unit ? `${text} ${unit}` : text;
 }

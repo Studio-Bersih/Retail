@@ -36,8 +36,8 @@
                 </p>
             </div>
             <button class="btn btn-primary" onclick={() => theme.toggle()}>
-                <Icon name={theme.current === 'light' ? 'info' : 'check'} size={18} />
-                {theme.current === 'light' ? 'Dark' : 'Light'}
+                <Icon name={theme.isDark ? 'check' : 'info'} size={18} />
+                {theme.isDark ? 'Light' : 'Dark'}
             </button>
         </header>
 

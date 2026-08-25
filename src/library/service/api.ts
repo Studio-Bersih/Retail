@@ -1,4 +1,4 @@
-import { API_URL } from '../config';
+import { useConfig } from '../config';
 
 export class ApiError extends Error {
     constructor(
@@ -26,7 +26,7 @@ type Options = RequestInit & {
 export async function api<T>(path: string, options: Options = {}): Promise<T> {
     const { fetch: f = globalThis.fetch, ...init } = options;
 
-    const response = await f(`${API_URL}${path}`, {
+    const response = await f(`${useConfig.API_URL}${path}`, {
         ...init,
         headers: {
             Accept: 'application/json',
