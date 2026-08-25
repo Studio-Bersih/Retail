@@ -41,7 +41,7 @@
             </button>
         </header>
 
-        <div class="card bg-base-100 shadow">
+        <div class="card bg-base-100 border-base-300 shadow-warm border">
             <div class="card-body gap-4">
                 <h2 class="card-title">Drawer</h2>
                 <p class="text-base-content/70 text-sm">
@@ -64,7 +64,7 @@
             </div>
         </div>
 
-        <div class="card bg-base-100 shadow">
+        <div class="card bg-base-100 border-base-300 shadow-warm border">
             <div class="card-body gap-4">
                 <h2 class="card-title">Modal</h2>
                 <p class="text-base-content/70 text-sm">
@@ -90,7 +90,7 @@
             </div>
         </div>
 
-        <div class="card bg-base-100 shadow">
+        <div class="card bg-base-100 border-base-300 shadow-warm border">
             <div class="card-body gap-4">
                 <h2 class="card-title">Toast &amp; icons</h2>
                 <div class="flex flex-wrap gap-2">
@@ -124,7 +124,7 @@
             </div>
         </div>
 
-        <div class="card bg-base-100 shadow">
+        <div class="card bg-base-100 border-base-300 shadow-warm border">
             <div class="card-body">
                 <h2 class="card-title">Formatting &amp; hooks</h2>
                 <div class="overflow-x-auto">
